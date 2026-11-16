@@ -1,23 +1,25 @@
 # Ho-Ho-Boom!
 
-**Спасите Новый год от армии Снежной Королевы!**
+**Save the New Year from the Snow Queen's army!**
 
-Новогодний шутер с видом сверху: волны монстров, бонусы и ловушки в подарках,
-улучшения между волнами, боссы каждые 5 волн.
-Игра — один HTML-файл, ничего устанавливать не нужно.
+A top-down New Year shooter: waves of monsters, power-ups and traps hidden in gifts,
+upgrades between waves, and a boss every 5 waves.
+The whole game is a single HTML file — nothing to install.
 
-## Как запустить
-Скачайте репозиторий и откройте `index.html` в браузере.
+The in-game text is in Russian for now; an English version is planned.
 
-## Управление
-- WASD / стрелки — бегать
-- Мышь — целиться
-- ЛКМ / Пробел — стрелять
-- Shift — рывок
-- Q / колесо мыши / 1–4 — сменить оружие
-- P — пауза и громкость
-- R — начать заново
-- M — выключить звук
+## How to play
+Download the repository and open `index.html` in a browser.
 
-## Версия
-0.35.0. История изменений — в [CHANGELOG.md](CHANGELOG.md).
+## Controls
+- WASD / arrow keys — move
+- Mouse — aim
+- Left click / Space — shoot
+- Shift — dash
+- Q / mouse wheel / 1–4 — switch weapon
+- P — pause and volume
+- R — restart
+- M — mute
+
+## Version
+0.35.0. See [CHANGELOG.md](CHANGELOG.md) for the full history.

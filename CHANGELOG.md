@@ -1,179 +1,179 @@
-# Журнал изменений
+# Changelog
 
-Формат — [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), номера версий — [SemVer](https://semver.org/lang/ru/).
-До выхода 1.0 версия записывается как 0.<номер сборки>.<исправление>.
+Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow [SemVer](https://semver.org/).
+Before 1.0 the version is 0.<build>.<patch>.
 
 ## [0.35.0] — 2026-11-16
-### Изменено
-- Ледяной лазер: число лучей растёт с улучшением «Двойной залп» (до 4, веером); луч в 3 раза шире.
-- Ледяной лазер: ровный пульсирующий гул вместо отрывистых звуков, шипение при попадании.
-- Ёлочные мины: ставятся чаще (раз в 0,35 с), до 10 на поле, срабатывают с вдвое большего расстояния, урон 9 вместо 7.
-- Ёлочные мины: взрыв поджигает соседние мины; через 7 с мина взрывается сама.
-- Снежкомёт: перезарядка 0,45 с вместо 0,65, снежок летит в 1,4 раза быстрее.
-### Добавлено
-- Замедление времени в опасные моменты: толпа врагов вплотную, ранение при 3 сердцах и меньше, последняя жизнь.
-- Замедление после бонусов «Морозный шок», «Новогодний салют», «Снежный вихрь».
-- Номер версии в меню.
+### Changed
+- Ice Laser: one extra beam per Double Volley level (up to 4, fanned out); beam hits a 3× wider area.
+- Ice Laser: steady pulsing hum instead of choppy blips; sizzle on hit.
+- Christmas-Tree Mines: placed faster (every 0.35 s), up to 10 on the field, trigger from twice the distance, damage 9 instead of 7.
+- Christmas-Tree Mines: an explosion sets off nearby mines; a mine explodes on its own after 7 s.
+- Snowball Launcher: reload 0.45 s instead of 0.65 s, snowballs fly 1.4× faster.
+### Added
+- Slow motion in dangerous moments: a crowd right next to Santa, getting hit at 3 hearts or fewer, the last life.
+- Slow motion after the Frost Shock, New Year Fireworks and Snow Whirlwind power-ups.
+- Version number in the menu.
 
 ## [0.34.0]
-### Добавлено
-- Замедление за серии убийств: «Массакр», «Апокалипсис», «Доминируешь», «Ты всех рвёшь». Между замедлениями 8 с.
-### Изменено
-- Замедление заканчивается плавно, без рывка.
+### Added
+- Slow motion for kill streaks: Massacre, Apocalypse, Dominating, Owning. At least 8 s between them.
+### Changed
+- Slow motion ends smoothly instead of snapping back.
 
 ## [0.33.0]
-### Добавлено
-- Бонус «Морозный шок»: ледяная молния прыгает по 16 врагам, бьёт и замораживает.
-### Изменено
-- Карточки улучшений в виде ёлочных игрушек.
-- Уровни на карточке: следующий уровень отмечен зелёным, у последнего подпись.
-- Лечение от убийств ограничено: не больше 1 сердца за волну из врагов и не больше 1 за уровень «Рождественского духа».
+### Added
+- Frost Shock power-up: an ice lightning bolt jumps across up to 16 enemies, damaging and freezing them.
+### Changed
+- Upgrade cards look like Christmas-tree baubles.
+- Upgrade levels: the next level is marked green, the last level is labelled.
+- Healing from kills is capped: at most 1 heart per wave from enemy drops and 1 per Christmas Spirit level.
 
 ## [0.32.0]
-### Добавлено
-- Четыре варианта оформления карточек улучшений для сравнения.
-### Исправлено
-- Если все улучшения прокачаны до максимума, игра больше не зависает на выборе.
+### Added
+- Four upgrade-card designs to compare.
+### Fixed
+- The game no longer gets stuck on the upgrade screen when every upgrade is maxed out.
 
 ## [0.31.0]
-### Изменено
-- В первой волне нет подарка-сердечка.
-- «Гирлянда» — до 5 уровней.
+### Changed
+- No heart gift in the first wave.
+- Garland goes up to level 5.
 
 ## [0.30.0]
-### Добавлено
-- Бонусы «Снежный вихрь» (отбрасывает врагов), «Хоровод» (кольца пуль на 360°), «Застывшее время» (замедление врагов на 6 с).
-- Улучшения «Гирлянда» (разряд перескакивает на соседних врагов) и «Клевер удачи» (подарков больше).
-### Изменено
-- Прицел крупнее, салатовый; краснеет и сжимается при наведении на врага.
-- Подзаголовок в меню: «Спасите Новый год от армии Снежной Королевы!».
+### Added
+- Power-ups: Snow Whirlwind (knocks enemies back), Round Dance (rings of bullets in all directions), Frozen Time (enemies slowed for 6 s).
+- Upgrades: Garland (a spark jumps to nearby enemies) and Lucky Clover (more gifts).
+### Changed
+- Bigger lime crosshair that turns red and shrinks over an enemy.
+- Menu subtitle: "Save the New Year from the Snow Queen's army!"
 
 ## [0.29.0]
-### Добавлено
-- Тестовый режим по адресу `index.html?debug`.
-- Громкость музыки, эффектов и голоса в паузе (запоминается).
-- Экран загрузки; клавиша R — начать заново; короткая анимация гибели монстров.
-### Изменено
-- Освещение работает быстрее; фон собирается один раз после загрузки картинок.
-- Интерфейс не уменьшается вместе с игровым полем.
-### Исправлено
-- Повторная фраза диктора больше не обрывается раньше времени.
+### Added
+- Test mode at `index.html?debug`.
+- Separate music, effects and voice volume in the pause menu (remembered).
+- Loading screen; R to restart; short death animation for monsters.
+### Changed
+- Faster lighting; the background is built once after images load.
+- The interface no longer shrinks with the playing field.
+### Fixed
+- A repeated announcer line is no longer cut short.
 
 ## [0.28.0]
-### Изменено
-- Снежок метателя вылетает из руки и стал меньше.
-- Ясные правила, какая фраза диктора звучит, если события совпали.
+### Changed
+- The thrower's snowball leaves from its hand and is smaller.
+- Clear rules for which announcer line plays when events overlap.
 
 ## [0.27.0]
-### Изменено
-- Картинки и звуки разложены по папкам в `Media/`.
+### Changed
+- Images and sounds sorted into folders under `Media/`.
 
 ## [0.26.0]
-### Добавлено
-- Голос диктора: Double kill, Triple kill, Massacre, Dominating, You are owning.
+### Added
+- Announcer voice: Double kill, Triple kill, Massacre, Dominating, You are owning.
 
 ## [0.25.0]
-### Изменено
-- Первая волна на поверхности «снег с замёрзшей травой».
+### Changed
+- The first wave uses the "snow with frozen grass" ground.
 
 ## [0.24.0]
-### Добавлено
-- Пять поверхностей поля, своя на каждую волну.
+### Added
+- Five ground surfaces, a different one each wave.
 
 ## [0.23.0]
-### Добавлено
-- Постоянные пятна льда; раскладка поля меняется каждую волну.
-### Изменено
-- Декора меньше.
+### Added
+- Permanent ice patches; the field layout changes every wave.
+### Changed
+- Fewer decorations.
 
 ## [0.22.0]
-### Добавлено
-- Декор: камни, валуны, кусты, пни, брёвна, сугробы, трава.
+### Added
+- Decorations: rocks, boulders, bushes, stumps, logs, snowdrifts, grass.
 
 ## [0.21.0]
-### Изменено
-- Пятна льда разбросаны по всему полю.
+### Changed
+- Ice patches spread across the whole field.
 
 ## [0.20.0]
-### Добавлено
-- Лёд: Санта и монстры скользят; ловушка «Ветер! Лёд!».
+### Added
+- Ice: Santa and monsters slide on it; "Wind! Ice!" trap.
 
 ## [0.19.0]
-### Добавлено
-- Текстура снега, ёлки-картинки, следы персонажей (заносятся за 2–3 с).
+### Added
+- Snow texture, tree images, footprints for every character (filled in by snow after 2–3 s).
 
 ## [0.18.0]
-### Добавлено
-- Крампус: картинки ходьбы и рывка; рывок дальше и быстрее.
+### Added
+- Krampus: walking and charging images; the charge goes farther and faster.
 
 ## [0.17.0]
-### Изменено
-- Снежки на 15% меньше.
+### Changed
+- Snowballs 15% smaller.
 
 ## [0.16.0]
-### Добавлено
-- Картинка снежка; вражеский снежок с красной обводкой.
+### Added
+- Snowball image; enemy snowballs have a red outline.
 
 ## [0.15.0]
-### Изменено
-- Порядок появления монстров вынесен в одну таблицу.
+### Changed
+- The monster spawn order lives in a single table.
 
 ## [0.14.0]
-### Добавлено
-- Снеговик-метатель: картинки ходьбы и броска.
+### Added
+- Snowball-throwing snowman: walking and throwing images.
 
 ## [0.13.0]
-### Добавлено
-- Эльф-лучник: обычная поза и прицеливание.
+### Added
+- Elf archer: idle and aiming poses.
 
 ## [0.12.0]
-### Добавлено
-- Снеговики, два вида.
+### Added
+- Snowmen, two kinds.
 
 ## [0.11.0]
-### Добавлено
-- Пряники, два вида.
-### Изменено
-- Ловушка замедления называется «Липкая карамель».
+### Added
+- Gingerbread men, two kinds.
+### Changed
+- The slowing trap is now called Sticky Caramel.
 
 ## [0.10.0]
-### Добавлено
-- Гоблины, два вида.
-- Детская мультяшная версия сохранена отдельно.
+### Added
+- Goblins, two kinds.
+- A separate cartoon kids' version saved.
 
 ## [0.9.0]
-### Изменено
-- Новая картинка Санты (вид сверху, без ног); пули вылетают точно из дула.
+### Changed
+- New Santa image (top-down, no legs); bullets leave exactly from the muzzle.
 
 ## [0.8.0]
-### Изменено
-- Жизни — сердечки на плашке, на последней жизни пульсируют; из врагов выпадает сердечко вместо пряника.
+### Changed
+- Lives shown as hearts on a panel, pulsing on the last life; enemies drop a heart instead of a gingerbread cookie.
 
 ## [0.7.0]
-### Изменено
-- Игровое поле в 1,25 раза просторнее.
+### Changed
+- The playing field is 1.25× roomier.
 
 ## [0.6.0]
-### Добавлено
-- Санта-картинка вместо нарисованного кодом.
+### Added
+- Santa image instead of a code-drawn Santa.
 
 ## [0.5.0]
-### Добавлено
-- Подарок-сердечко в каждой волне.
+### Added
+- A heart gift every wave.
 
 ## [0.4.0]
-### Добавлено
-- Эффектное появление босса: замедление, наезд камеры, имя и подпись, зловещий звук.
-- Переключение оружия (Q, колесо мыши, 1–4).
+### Added
+- Dramatic boss entrance: slow motion, camera zoom, name and subtitle, ominous sound.
+- Weapon switching (Q, mouse wheel, 1–4).
 
 ## [0.3.0]
-### Добавлено
-- Ночное освещение, объём у персонажей, тени.
+### Added
+- Night lighting, shading on characters, shadows.
 
 ## [0.2.0]
-### Добавлено
-- 14 улучшений между волнами; оружие из подарков: снежкомёт, ледяной лазер, ёлочные мины; боссы каждые 5 волн.
+### Added
+- 14 upgrades between waves; gift weapons: Snowball Launcher, Ice Laser, Christmas-Tree Mines; a boss every 5 waves.
 
 ## [0.1.0]
-### Добавлено
-- Первая версия: Санта отстреливается от волн монстров, подарки с бонусами и ловушками.
+### Added
+- First version: Santa fights off waves of monsters; gifts hold power-ups and traps.
