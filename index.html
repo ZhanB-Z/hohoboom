@@ -14,19 +14,19 @@
 <script>
 "use strict";
 // TODO: озвучка короткими фразами («Хо-хо-хо!» при бонусе) — нужны сэмплы
-// TODO: готовая графика (спрайты Санты, монстров, боссов) — пользователь подготовит картинки позже
 // TODO: мобильное управление, скины Санты, онлайн-рекорды
 // TODO: анимация замедления времени (бонус «Застывшее время» и замедление за серии убийств): сейчас только голубая дымка и звук
-// TODO: картинки (и, может быть, анимация) для Снежной Королевы и Щелкунчика: сейчас они нарисованы кодом
+// TODO: картинки для Щелкунчика: сейчас он нарисован кодом (у Снежной Королевы картинки есть с 0.36.0)
 // TODO: два языка, русский и английский: делаем при разделении кода на модули
 // TODO: карточки улучшений: выбраны ёлочные игрушки; код остальных трёх видов (подарки, карты, медали) удалить при разделении на модули
 // TODO: арсенал: выбор оружия перед стартом, большая часть закрыта и открывается за достижения; у всего оружия равный урон в секунду
-const VERSION = '0.35.0';   // версия игры: 0.<номер файла index_vNN>.<исправление>; история в CHANGELOG.md
+// TODO: оружие: обсудить новое оружие вроде ракетницы (rocket launcher)
+const VERSION = '0.36.0';   // версия игры: 0.<номер сборки>.<исправление>; история в CHANGELOG.md
 const cv = document.getElementById('c'), ctx = cv.getContext('2d');
 const TAU = Math.PI * 2;
 const rand = (a, b) => a + Math.random() * (b - a);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-// Тестовый режим: открыть файл с ?debug в конце адреса (index_v35.html?debug). Тогда в 1-й волне лишние монстры и работают клавиши Z X C V B I.
+// Тестовый режим: открыть файл с ?debug в конце адреса (index_v35.html?debug). Тогда в 1-й волне лишние монстры и работают клавиши Z X C V B I, K (Снежная Королева), J (снять ей треть здоровья).
 const DEBUG = new URLSearchParams(location.search).has('debug');
 // Все картинки игры создаются через new Image(): запоминаем их, чтобы показать экран загрузки и собрать фон один раз, когда всё загрузилось.
 const ALL_IMGS = [];
@@ -70,6 +70,14 @@ const ESPR = {
         { src: 'Media/characters/krampus_prep2.png', px: 280, py: 264, s: .19 },
       ] },
   ],
+  // Снежная Королева (босс): движение, замах (aim) и два кадра ярости (rage): ими она крутится перед телепортом и в 3-й фазе
+  queen: [
+    { src: 'Media/characters/queen_walk.png', px: 449, py: 235, s: .3, aim: 'Media/characters/queen_cast.png', aimPx: 323, aimPy: 225, aimS: .3,
+      rage: [
+        { src: 'Media/characters/queen_rage1.png', px: 392, py: 257, s: .3 },
+        { src: 'Media/characters/queen_rage2.png', px: 388, py: 263, s: .3 },
+      ] },
+  ],
   // метатель: идёт со снежком в когтях, при броске заносит снежок над головой (поза крупнее на 16%, поэтому aimS)
   thrower: [
     { src: 'Media/characters/thrower_walk.png', px: 256, py: 254, s: .088, aim: 'Media/characters/thrower_throw.png', aimPx: 330, aimPy: 434, aimS: .102, hand: [111, 88] },
@@ -82,11 +90,11 @@ const ESPR = {
 for (const t in ESPR) for (const v of ESPR[t]) {
   v.img = new Image(); v.ok = false; v.img.onload = () => { v.ok = true; }; v.img.src = v.src;
   if (v.aim) { v.aimImg = new Image(); v.aimOK = false; v.aimImg.onload = () => { v.aimOK = true; }; v.aimImg.src = v.aim; }
-  if (v.prep) for (const p of v.prep) { p.img = new Image(); p.ok = false; p.img.onload = () => { p.ok = true; }; p.img.src = p.src; }
+  for (const p of [...(v.prep || []), ...(v.rage || [])]) { p.img = new Image(); p.ok = false; p.img.onload = () => { p.ok = true; }; p.img.src = p.src; }
 }
 function enemySprite(e) {
   const list = ESPR[e.t];
-  if (!list) return null;
+  if (!list || e.old) return null;   // old: тестовый босс в старом виде, рисуется кодом
   const v = list[e.v % list.length];
   return v.ok ? v : null;
 }
@@ -153,6 +161,18 @@ const ENM = {
   nutcracker:{ hp: 150, sp: 52,  r: 34, pts: 1200, col: '#b3121b', splat: '#ffd23f', boss: 1, name: 'ЩЕЛКУНЧИК' },
 };
 const BOSSES = ['krampus', 'queen', 'nutcracker'];
+// Снежная Королева: три фазы по здоровью. Со 2-й фазы — вихревой телепорт: крутится (spin), исчезает,
+// у Санты темнеет круг (mark, секунды для фаз 2 и 3), она появляется в нём с кольцом осколков; кто в круге — урон и заморозка (freeze).
+// cd — пауза между телепортами (от и до, для фаз 2 и 3), appear — сколько длится проявление
+// Снежная Королева. 2-я фаза — ледяные пики издалека, 3-я (ярость) — вихревой телепорт.
+// spin, mark, cd, appear: телепорт (с); markR: радиус метки; freeze: заморозка Санты (с)
+// pk: пики — cd перерыв между заходами, cast замах, warn время от метки до удара, gap задержка между соседними метками,
+//     R радиус пятна, n меток, если Санта бежит (встают на его пути), near — меток вокруг, если стоит
+const QUEEN = { ph2: 2 / 3, ph3: 1 / 3, spin: .6, mark: .75, markR: 95, cd: [4.5, 6], freeze: .7, appear: .35,
+  pk: { cd: [4.5, 6.5], cast: .6, warn: .95, gap: .2, R: 62, n: 4, near: 2 } };
+let qspikes = [];   // поля ледяных пиков: { x, y, t (до удара), w (полное ожидание), up (сколько уже торчат), hit }
+// плавная Королева: скользит, поворачивается не рывком, платье колышется (old — нарисована кодом, raw — картинки без плавности, для сравнения в тесте)
+const qSmooth = e => e.t === 'queen' && !e.old && !e.raw;
 const BOSS_SUB = { krampus: 'Пришёл за непослушными', queen: 'Вечная зима уже здесь', nutcracker: 'Он щёлкает не только орехи' };
 const WEAPS = ['snowball', 'laser', 'mine'];
 const INTRO_T = 2.6;
@@ -532,9 +552,10 @@ function buildBG() {
 /* ---------- СТАРТ / ВОЛНЫ ---------- */
 function reset() {
   P = { x: W / 2, y: H / 2, r: 16, a: 0, hp: 5, max: 5, cd: 0, inv: 0, step: 0, weapon: 'candy',
-        dashCd: 0, dashT: 0, dvx: 0, dvy: 0, beam: null, lt: 0, bt: 0 };
+        dashCd: 0, dashT: 0, dvx: 0, dvy: 0, beam: null, lt: 0, bt: 0, frz: 0 };
+  if (TEST_LIVES) P.hp = P.max = TEST_LIVES;
   bullets = []; enemies = []; gifts = []; orbs = []; parts = []; texts = []; rings = [];
-  mines = []; eb = []; shocks = []; callouts = []; flashes = []; prints = []; ice = []; streaks = []; windT = 0; dying = []; zaps = [];
+  mines = []; eb = []; shocks = []; qspikes = []; callouts = []; flashes = []; prints = []; ice = []; streaks = []; windT = 0; dying = []; zaps = [];
   score = 0; combo = 0; comboT = 0; shake = 0; buffs = {}; kills = 0; hurtFlash = 0; nextGift = 4; overT = 0;
   up = {}; clearT = 0; mk = 0; mkT = 0; slowT = 0; autoSlow = 0; autoSlowCd = 0; zoom = 0; whiteFlash = 0; introE = null; introT = 0;
   if (dctx) dctx.clearRect(0, 0, W, H);
@@ -551,6 +572,11 @@ const SPAWN_TABLE = {
 };
 // ТЕСТ: добавляет в первую волну снеговиков и метателей, чтобы посмотреть новую графику. Поставь false, чтобы отключить.
 const TEST_WAVE1 = DEBUG ? { imp: 15, ginger: 4, snowman: 3, elf: 4, thrower: 3 } : null;   // все обычные монстры сразу, без босса (боссы только на 5-й, 10-й… волнах)
+// ТЕСТ: в тестовом режиме 1-я волна — только этот босс, монстров нет (TEST_WAVE1 тогда не действует); null — обычная тестовая волна
+const TEST_BOSS1 = DEBUG ? 'queen' : null;
+// ТЕСТ: для сравнения 2-я волна — тот же босс без плавности (картинки как в 0.36.0), 3-я — в старом виде (нарисован кодом, без фаз и телепорта); false — обычные волны
+const TEST_BOSS_COMPARE = DEBUG && !!TEST_BOSS1;
+const TEST_LIVES = DEBUG ? 10 : 0;   // ТЕСТ: столько жизней в тестовом режиме (0 — как в игре, 5)
 // ТЕСТ: если указан тип, в каждой волне появляется только один враг этого типа (остальное, включая TEST_WAVE1, игнорируется). null = обычная игра.
 const TEST_ONLY = null;
 // ТЕСТ: клавиша I в игре вызывает порыв ветра со льдом рядом с Сантой (вместо ожидания ловушки). false = отключить.
@@ -570,6 +596,8 @@ function startWave(n) {
   const cnt = 8 + n * 5;
   for (let i = 0; i < cnt; i++) spawnQ.push(pickType(n));
   if (n === 1 && TEST_WAVE1) for (const t in TEST_WAVE1) for (let k = 0; k < TEST_WAVE1[t]; k++) spawnQ.splice(Math.floor(rand(2, spawnQ.length + 1)), 0, t);
+  if (n === 1 && TEST_BOSS1) spawnQ = [TEST_BOSS1];   // 1-я волна — только этот босс, без монстров
+  if ((n === 2 || n === 3) && TEST_BOSS_COMPARE) spawnQ = [TEST_BOSS1];   // 2-я и 3-я — он же в прежних видах (см. spawnEnemy)
   if (n % 5 === 0) {
     const cycle = n / 5 - 1, nb = 1 + Math.floor(cycle / 3);
     for (let k = 0; k < nb; k++) spawnQ.splice(Math.floor(rand(cnt * .4, cnt)), 0, BOSSES[(cycle + k) % 3]);
@@ -602,6 +630,8 @@ function spawnEnemy(t) {
     const cs = [[150, 150], [W - 150, 150], [150, H - 150], [W - 150, H - 150]];
     cs.sort((a, b) => Math.hypot(b[0] - P.x, b[1] - P.y) - Math.hypot(a[0] - P.x, a[1] - P.y));
     const e = makeEnemy(t, cs[0][0], cs[0][1], true);
+    if (TEST_BOSS_COMPARE && wave === 2) e.raw = true;   // тест: картинки без плавности
+    if (TEST_BOSS_COMPARE && wave === 3) e.old = true;   // тест: старый вид, нарисован кодом
     e.ghost = true; introE = e; introT = INTRO_T;
     sfx.bossIntro();
     return;
@@ -733,7 +763,7 @@ function explode(x, y, R, dmg, hurtP = false, col = '#ffd23f') {
   if (hurtP && Math.hypot(P.x - x, P.y - y) < R + P.r) hurtPlayer({ x, y });
 }
 function damageEnemy(e, dmg, kx = 0, ky = 0) {
-  if (e.dead || e.ghost) return;
+  if (e.dead || e.ghost || e.hid) return;   // hid: Королева в телепорте, её нет на поле
   e.hp -= dmg; e.fl = .1;
   if (!e.boss) { e.kx += kx; e.ky += ky; }
   if (e.hp <= 0) killEnemy(e); else sfx.hit();
@@ -850,7 +880,7 @@ function knock() {   // «Снежный вихрь»: волна от Сант�
   addRing(P.x, P.y, 420, '#e8f6ff', .6); addRing(P.x, P.y, 260, '#bfe8ff', .45);
   burst(P.x, P.y, 70, ['#fff', '#e8f6ff', '#bfe8ff'], 650, .7, 4);
   for (const e of enemies) {
-    if (e.dead || e.ghost) continue;
+    if (e.dead || e.ghost || e.hid) continue;
     const dx = e.x - P.x, dy = e.y - P.y, d = Math.hypot(dx, dy) || 1;
     if (d > 460) continue;
     const f = (e.boss ? 350 : 1400) * (1 - d / 520);   // ближних отбрасывает сильнее, боссов слабо
@@ -878,7 +908,7 @@ function frostShock() {   // «Морозный шок»: ледяная мол�
   for (let k = 0; k < 16; k++) {
     let nx = null, nd = k ? 260 : 420;   // первый прыжок от Санты дальний, дальше от врага к врагу
     for (const e of enemies) {
-      if (e.dead || e.ghost || done.has(e)) continue;
+      if (e.dead || e.ghost || e.hid || done.has(e)) continue;
       const d = Math.hypot(e.x - prev.x, e.y - prev.y);
       if (d < nd) { nd = d; nx = e; }
     }
@@ -901,7 +931,7 @@ function chainZap(from, dmg) {   // «Гирлянда»: разряд пере�
   for (let k = 0; k < U('chain'); k++) {
     let nx = null, nd = 170;
     for (const e of enemies) {
-      if (e.dead || e.ghost || done.has(e)) continue;
+      if (e.dead || e.ghost || e.hid || done.has(e)) continue;
       const d = Math.hypot(e.x - cur.x, e.y - cur.y);
       if (d < nd) { nd = d; nx = e; }
     }
@@ -1114,6 +1144,139 @@ function enemyFire(e) {
     e.sh = 2.3;
   }
 }
+// Снежная Королева: фазы и вихревой телепорт. true — она сейчас занята телепортом (обычные ходьба и стрельба пропускаются)
+function queenTick(e, dt) {
+  const q = QUEEN, f = e.hp / e.mhp, ph = f > q.ph2 ? 1 : f > q.ph3 ? 2 : 3;
+  if (ph > (e.qph || 1)) {   // новая фаза
+    e.qph = ph;
+    if (ph === 2) { e.pkCd = 1.2; callout('ЛЕДЯНЫЕ ПИКИ!', '#8fe8ff', 46); }
+    else {
+      e.tpCd = 1; e.pkW = 0; callout('ЯРОСТЬ КОРОЛЕВЫ!', '#8fe8ff', 52);
+      shake = Math.max(shake, 14); sfx.big(); addRing(e.x, e.y, 300, '#8fe8ff', .7);
+      burst(e.x, e.y, 50, ['#fff', '#bfe8ff', '#8fe8ff'], 420, .8, 5, true);
+    }
+  }
+  if (e.appT > 0) e.appT -= dt;
+  if (e.tp === 'spin') {   // крутится на месте, вокруг метель; в конце исчезает
+    e.tpT -= dt; e.spinA = (e.spinA || 0) + dt * (8 + 16 * (1 - e.tpT / q.spin));
+    if (Math.random() < .7) burst(e.x + rand(-40, 40), e.y + rand(-40, 40), 1, ['#fff', '#bfe8ff', '#8fe8ff'], 160, .6, 4, true);
+    if (e.tpT <= 0) {
+      burst(e.x, e.y, 50, ['#fff', '#bfe8ff', '#8fe8ff'], 380, .7, 4, true); addRing(e.x, e.y, 140, '#bfe8ff', .4);
+      // метка там, где Санта будет через треть секунды, если не свернёт: стоять на месте опасно, уйти можно бегом или рывком
+      e.mx = clamp(P.x + (P.ivx || 0) * .35, 60, W - 60); e.my = clamp(P.y + (P.ivy || 0) * .35, 60, H - 60);
+      e.tp = 'gone'; e.tpT = e.mkT = q.mark;
+      e.hid = true; e.x = -5000; e.y = -5000; e.px = undefined;   // далеко за полем: пули, мины и гирлянда её не находят
+      tone(60, e.tpT, 'sawtooth', .05, 90); tone(900, e.tpT, 'sine', .025, 700);
+    }
+    return true;
+  }
+  if (e.tp === 'gone') { e.tpT -= dt; if (e.tpT <= 0) queenAppear(e, ph); return true; }
+  if (ph === 2) {   // ледяные пики: короткий замах, потом метки там, где Санта стоит или куда бежит
+    if (e.pkW > 0) {
+      e.pkW -= dt;
+      if (e.pkW <= 0) castSpikes(e);
+    } else {
+      e.pkCd = (e.pkCd ?? 2) - dt;
+      if (e.pkCd <= 0 && !(e.wind > 0) && !(e.spiral > 0) && e.fr <= 0) {
+        e.pkW = q.pk.cast; e.pkCd = rand(...q.pk.cd); e.sh = Math.max(e.sh, q.pk.cast + .8);   // пока колдует, не стреляет
+        tone(420, q.pk.cast, 'sine', .035, 500); addRing(e.x, e.y, 60, '#bfe8ff', q.pk.cast);
+      }
+    }
+  }
+  if (ph === 3) {
+    e.tpCd = (e.tpCd ?? 2) - dt;
+    if (e.tpCd <= 0 && !(e.wind > 0) && !(e.spiral > 0) && e.fr <= 0) {
+      e.tp = 'spin'; e.tpT = q.spin; e.spinA = 0; e.tpCd = rand(...q.cd);
+      sfx.wind(); tone(300, q.spin, 'sine', .04, 900);
+      return true;
+    }
+  }
+  return false;
+}
+function castSpikes(e) {
+  const k = QUEEN.pk, vx = P.ivx || 0, vy = P.ivy || 0, v = Math.hypot(vx, vy);
+  const add = (x, y, w) => qspikes.push({ x: clamp(x, 40, W - 40), y: clamp(y, 40, H - 40), t: w, w, up: 0, hit: false, sd: rand(0, 99) });
+  if (v > 60) {   // бежит: метки встают цепочкой туда, где он окажется к моменту удара каждой, если не свернёт
+    for (let i = 0; i < k.n; i++) { const w = k.warn + i * k.gap; add(P.x + vx * w, P.y + vy * w, w); }
+  } else {   // стоит: под ним и рядом, чтобы шаг в сторону не всегда спасал
+    add(P.x, P.y, k.warn);
+    const a0 = rand(0, TAU);
+    for (let i = 0; i < k.near; i++) { const a = a0 + i * TAU / k.near; add(P.x + Math.cos(a) * k.R * 1.7, P.y + Math.sin(a) * k.R * 1.7, k.warn + (i + 1) * k.gap); }
+  }
+  e.aimHold = .35; addRing(e.x, e.y, 110, '#8fe8ff', .4); sfx.nova();
+}
+function updateSpikes(dt) {
+  for (const s of qspikes) {
+    if (s.t > 0) {
+      s.t -= dt;
+      if (s.t <= 0) {   // удар: пики вырываются из земли
+        burst(s.x, s.y, 26, ['#fff', '#bfe8ff', '#8fe8ff'], 300, .6, 4, true); addRing(s.x, s.y, QUEEN.pk.R * 1.4, '#e6fbff', .3);
+        shake = Math.max(shake, 6); tone(1500, .12, 'square', .025, -1100); tone(90, .25, 'sawtooth', .05, -40);
+      }
+    } else {
+      s.up += dt;
+      if (!s.hit && s.up < .15 && Math.hypot(P.x - s.x, P.y - s.y) < QUEEN.pk.R * .8 + P.r) { s.hit = true; hurtPlayer({ x: s.x, y: s.y }); }
+    }
+  }
+  qspikes = qspikes.filter(s => s.up < .55);
+}
+function queenAppear(e, ph) {   // появляется в центре метки: кольцо осколков, кто в круге — урон и заморозка
+  e.x = e.mx; e.y = e.my; e.hid = false; e.tp = null; e.appT = QUEEN.appear; e.px = undefined;
+  e.ivx = e.ivy = e.kx = e.ky = 0;
+  shake = Math.max(shake, 14); sfx.big(); sfx.nova();
+  addRing(e.x, e.y, QUEEN.markR * 1.7, '#bfe8ff', .55); addRing(e.x, e.y, QUEEN.markR, '#fff', .35);
+  burst(e.x, e.y, 70, ['#fff', '#bfe8ff', '#8fe8ff'], 440, .8, 5, true);
+  for (let i = 0; i < 12; i++) eproj(e.x, e.y, i / 12 * TAU, 220, 'shard', 7);
+  if (ph === 3) { e.spiral = 26; e.spT = .3; e.spA = Math.atan2(P.y - e.y, P.x - e.x); }   // в ярости сразу ещё и спираль
+  if (Math.hypot(P.x - e.x, P.y - e.y) < QUEEN.markR + P.r) freezePlayer(e);
+  { const dx = e.x - P.x, dy = e.y - P.y, d = Math.hypot(dx, dy), a = d > 5 ? Math.atan2(dy, dx) : rand(0, TAU);   // отскакивает от Санты, чтобы не стоять на нём
+    e.kx = Math.cos(a) * 900; e.ky = Math.sin(a) * 900; }
+  e.sh = 1.4;
+}
+function freezePlayer(src) {   // удар льдом: урон и заморозка; щит или неуязвимость спасают от обоих
+  if (P.inv > 0) return;
+  const shield = buffs.shield > 0;
+  hurtPlayer({ x: src.x, y: src.y });
+  if (shield || state !== 'play') return;
+  P.frz = QUEEN.freeze; P.ivx = P.ivy = 0; P.dashT = 0;
+  addText(P.x, P.y - 34, 'ЗАМОРОЖЕН!', '#bfe8ff', 22);
+}
+// Ледяное пятно со шпилями: k — насколько близко удар (0…1), len — длина шпилей (1 — полная), al — прозрачность, sd — свой узор
+function drawIceField(x, y, R, k, len, al, sd) {
+  ctx.save(); ctx.translate(x, y); ctx.globalAlpha = al;
+  // светлый иней вокруг: край пятна плавно переходит в посветлевший снег, чёткой окружности нет
+  const fr = ctx.createRadialGradient(0, 0, R * .6, 0, 0, R * 1.5);
+  fr.addColorStop(0, 'rgba(190,235,255,0)'); fr.addColorStop(.55, `rgba(190,235,255,${.1 + k * .14})`); fr.addColorStop(1, 'rgba(190,235,255,0)');
+  ctx.fillStyle = fr; ctx.beginPath(); ctx.arc(0, 0, R * 1.5, 0, TAU); ctx.fill();
+  // тёмное пятно: в центре темнее всего, к краю растворяется
+  const dk = .55 + k * .4, g = ctx.createRadialGradient(0, 0, 0, 0, 0, R * 1.05);
+  g.addColorStop(0, `rgba(0,2,20,${dk})`); g.addColorStop(.55, `rgba(0,4,30,${dk * .9})`); g.addColorStop(.8, `rgba(0,8,40,${dk * .5})`); g.addColorStop(1, 'rgba(0,10,45,0)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, R * 1.05, 0, TAU); ctx.fill();
+  // ледяные шпили растут из центра в разные стороны, каждый в свой момент
+  const hs = (i, s) => { const v = Math.sin(i * 12.9898 + s + sd) * 43758.5453; return v - Math.floor(v); };
+  for (let i = 0; i < 11; i++) {
+    const dl = hs(i, 1) * .45, kk = clamp((k - dl) / (1 - dl), 0, 1);
+    if (kk <= 0) continue;
+    const gr = (1 - (1 - kk) * (1 - kk)) * len;   // быстро выстреливает, потом дорастает
+    const a = i / 11 * TAU + (hs(i, 2) - .5) * .5, L = R * (.55 + hs(i, 3) * .45) * gr, wd = (5 + hs(i, 4) * 6) * R / 95 * (.6 + .4 * len);
+    ctx.save(); ctx.rotate(a);
+    const sg = ctx.createLinearGradient(0, 0, L, 0); sg.addColorStop(0, 'rgba(120,200,255,.95)'); sg.addColorStop(1, 'rgba(240,252,255,.95)');
+    ctx.fillStyle = sg; ctx.beginPath(); ctx.moveTo(0, -wd); ctx.lineTo(L, 0); ctx.lineTo(0, wd); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(L, 0); ctx.stroke();   // светлая грань
+    ctx.restore();
+  }
+  ctx.fillStyle = `rgba(200,240,255,${.5 * k})`; ctx.beginPath(); ctx.arc(0, 0, (4 + k * 6) * R / 95, 0, TAU); ctx.fill();   // ледяное ядро
+  ctx.restore();
+}
+function drawQueenMarks() {
+  // телепорт: тёмное пятно, где появится Королева; шпили дорастают к её появлению
+  for (const e of enemies) if (e.tp === 'gone') drawIceField(e.mx, e.my, QUEEN.markR, clamp(1 - e.tpT / e.mkT, 0, 1), 1, 1, e.mx * .0137 + e.my * .0291);
+  // пики: пока ждут — пятно темнеет и из него едва проклёвываются иглы; в момент удара шпили выстреливают и тают
+  for (const s of qspikes) {
+    if (s.t > 0) drawIceField(s.x, s.y, QUEEN.pk.R, 1 - s.t / s.w, .28, 1, s.sd);
+    else { const u = s.up / .55; drawIceField(s.x, s.y, QUEEN.pk.R, 1, Math.min(1, s.up / .07) * 1.35, 1 - u * u, s.sd); }
+  }
+}
 
 function update(dt) {
   if (P.weapon !== 'candy' && !(buffs[P.weapon] > 0)) P.weapon = 'candy';
@@ -1125,7 +1288,7 @@ function update(dt) {
   P.moving = il > 0;
   P.a =Math.atan2(my - P.y, mx - P.x);
   P.dashCd -= dt;
-  if ((keys.ShiftLeft || keys.ShiftRight) && P.dashCd <= 0 && P.dashT <= 0) {
+  if ((keys.ShiftLeft || keys.ShiftRight) && P.dashCd <= 0 && P.dashT <= 0 && P.frz <= 0) {
     P.dashT = .18; P.inv = Math.max(P.inv, .38); P.dashCd = 1.6 * (1 - .2 * U('dash'));
     P.dvx = il ? ix / il : Math.cos(P.a); P.dvy = il ? iy / il : Math.sin(P.a);
     sfx.dash(); addRing(P.x, P.y, 50, '#fff', .3);
@@ -1134,7 +1297,7 @@ function update(dt) {
     P.dashT -= dt; P.x += P.dvx * 800 * dt; P.y += P.dvy * 800 * dt;
     burst(P.x, P.y, 2, ['#fff', '#9ae6ff'], 50, .4, 5, true);
   } else {
-    const spd = 235 * (buffs.speed > 0 ? 1.5 : 1) * (1 + .1 * U('speed')) * (buffs.coal > 0 ? .55 : 1);
+    const spd = 235 * (buffs.speed > 0 ? 1.5 : 1) * (1 + .1 * U('speed')) * (buffs.coal > 0 ? .55 : 1) * (P.frz > 0 ? 0 : 1);   // заморожен: стоит, но стреляет
     // скорость плавно подтягивается к желаемой: на снегу почти мгновенно, на льду медленно (скольжение и занос)
     const onIce = iceAt(P.x, P.y), rt = Math.min(1, (onIce ? 1.4 : 16) * dt);
     P.ivx = (P.ivx || 0) + ((il ? ix / il * spd : 0) - (P.ivx || 0)) * rt;
@@ -1154,7 +1317,7 @@ function update(dt) {
     if (onIce && sp2 > 120 && Math.random() < .4) burst(P.x, P.y, 1, ['#dff6ff', '#ffffff'], 40, .3, 2, true);   // ледяные искры
   }
   P.x = clamp(P.x, 22, W - 22); P.y = clamp(P.y, 22, H - 22);
-  P.cd -= dt; P.inv -= dt;
+  P.cd -= dt; P.inv -= dt; if (P.frz > 0) P.frz -= dt;
   const trig = mouseDown || keys.Space;
   P.beam = null;
   if (trig) {
@@ -1229,30 +1392,51 @@ function update(dt) {
   // враги (при «Застывшем времени» для них время идёт в 3 раза медленнее, для Санты и пуль нет)
   if (autoSlowCd <= 0) {   // толпа вплотную к Санте
     let near = 0;
-    for (const e of enemies) if (!e.dead && !e.ghost && Math.hypot(e.x - P.x, e.y - P.y) < CROWD_R) near++;
+    for (const e of enemies) if (!e.dead && !e.ghost && !e.hid && Math.hypot(e.x - P.x, e.y - P.y) < CROWD_R) near++;
     if (near >= CROWD_N) autoSlowMo(CROWD_SLOW);
   }
   const pdt = dt;
   dt *= enemyTimeMul();
+  updateSpikes(dt);
   for (const e of enemies) {
     const d0 = ENM[e.t];
     const dx = P.x - e.x, dy = P.y - e.y, d = Math.hypot(dx, dy) || 1;
     e.a = Math.atan2(dy, dx); e.fl -= dt;
     if (e.aimHold > 0) e.aimHold -= dt;
+    if (qSmooth(e)) {
+      // взгляд догоняет Санту плавно, без рывков; позы и ярость перетекают друг в друга
+      const fa = e.fa ?? e.a; e.fa = fa + Math.atan2(Math.sin(e.a - fa), Math.cos(e.a - fa)) * Math.min(1, 3 * dt);
+      const step = (k, to, rate) => k + clamp(to - k, -rate * dt, rate * dt);
+      e.aimK = step(e.aimK || 0, e.wind > 0 || e.aimHold > 0 || e.pkW > 0 ? 1 : 0, 5);
+      e.rgK = step(e.rgK || 0, e.tp === 'spin' || e.qph === 3 ? 1 : 0, 4);
+      // снежная пыль с подола, когда она плывёт
+      const vs = Math.hypot(e.ivx || 0, e.ivy || 0);
+      if (!e.hid && vs > 20) for (let i = 0, n = vs / 45 + Math.random(); i < n - 1; i++) {
+        const sx = -e.ivy / vs, sy = e.ivx / vs, w = rand(-1, 1) * e.r * 1.3, bk = e.r * rand(1, 1.8);
+        burst(e.x - e.ivx / vs * bk + sx * w, e.y - e.ivy / vs * bk + sy * w, 1, ['#e8f8ff', '#a8e4ff', '#ffffff', '#cfefff'], 18, 1.5, 3.4, true);
+      }
+    }
     if (e.ghost) {   // босс ещё «проявляется»: дым, искры, кольца
       if (Math.random() < .8) burst(e.x + rand(-40, 40), e.y + rand(-10, 40), 1, ['#6a1b9a', '#ff2b2b', '#222'], 90, .9, 5, true, -120);
       if (Math.random() < .04) addRing(e.x, e.y, 130, '#ff2b2b', .6);
       continue;
     }
+    if (e.t === 'queen' && !e.old && queenTick(e, dt)) continue;   // телепорт: вихрь, исчезновение, метка
     if (!e.entered && e.x > 25 && e.x < W - 25 && e.y > 25 && e.y < H - 25) e.entered = true;
     if (e.fr > 0) e.fr -= dt;
     else {
       let sp = e.sp, mvx = dx / d, mvy = dy / d;
       if (d0.pref && e.entered) {
         e.sdT -= dt; if (e.sdT <= 0) { e.sd *= -1; e.sdT = rand(2, 4); }
-        if (d < d0.pref - 60) { mvx = -mvx; mvy = -mvy; sp *= .8; }
+        if (qSmooth(e)) {
+          // Королева: отступ, подход и обход сбоку смешиваются плавно, сторону обхода меняет по дуге
+          e.sdS = (e.sdS ?? e.sd) + (e.sd - (e.sdS ?? e.sd)) * Math.min(1, 1.2 * dt);
+          const rad = clamp((d - d0.pref) / 90, -1, 1), tan = (1 - Math.abs(rad) * .6) * e.sdS * .6, ux = mvx, uy = mvy;
+          mvx = ux * rad - uy * tan; mvy = uy * rad + ux * tan;
+        } else if (d < d0.pref - 60) { mvx = -mvx; mvy = -mvy; sp *= .8; }
         else if (d <= d0.pref + 40) { const t = mvx; mvx = -mvy * e.sd; mvy = t * e.sd; sp *= .5; }
         e.sh -= dt;
+        if (e.pkW > 0) sp *= .25;   // Королева колдует пики: почти стоит
         if (e.wind > 0) { e.wind -= dt; sp *= .3; if (e.wind <= 0) enemyFire(e); }
         else if (e.sh <= 0) e.wind = e.t === 'queen' ? .7 : .5;
         if (e.spiral > 0) { e.spT -= dt; if (e.spT <= 0) { e.spT = .07; eproj(e.x, e.y, e.spA, 210, 'shard', 7); e.spA += .55; e.spiral--; } }
@@ -1285,7 +1469,8 @@ function update(dt) {
         }
       }
       // на льду монстры тоже скользят: скорость подтягивается к желаемой медленно
-      const eRt = Math.min(1, (iceAt(e.x, e.y) ? 1.2 : 18) * dt);
+      // Королева не ходит, а плывёт: разгоняется и тормозит медленно
+      const eRt = Math.min(1, (qSmooth(e) ? 2.2 : iceAt(e.x, e.y) ? 1.2 : 18) * dt);
       e.ivx = (e.ivx || 0) + (mvx * sp - (e.ivx || 0)) * eRt; e.ivy = (e.ivy || 0) + (mvy * sp - (e.ivy || 0)) * eRt;
       e.x += e.ivx * dt; e.y += e.ivy * dt; e.ph += dt * sp / 12;
       if ((d0.pref || e.t === 'krampus') && e.entered) { e.x = clamp(e.x, 30, W - 30); e.y = clamp(e.y, 30, H - 30); }
@@ -1293,7 +1478,7 @@ function update(dt) {
     e.x += e.kx * dt; e.y += e.ky * dt;
     const f = Math.pow(.02, dt); e.kx *= f; e.ky *= f;
     const pr = PRINTS[e.t];   // следы: каждый тип оставляет свой отпечаток через заданное расстояние
-    if (pr && e.px !== undefined) {
+    if (pr && e.px !== undefined && !(e.t === 'queen' && !qSmooth(e))) {
       const mdx = e.x - e.px, mdy = e.y - e.py;
       e.fd = (e.fd || 0) + Math.hypot(mdx, mdy);
       if (e.fd > pr.step) {
@@ -1303,7 +1488,7 @@ function update(dt) {
       }
     }
     e.px = e.x; e.py = e.y;
-    if (!e.dead && d < e.r + P.r - 3) hurtPlayer(e);
+    if (!e.dead && !(e.appT > 0) && d < e.r + P.r - 3) hurtPlayer(e);   // Королева в момент появления не ранит касанием (удар уже был)
   }
   for (let i = 0; i < enemies.length; i++) for (let j = i + 1; j < enemies.length; j++) {
     const a = enemies[i], b = enemies[j], dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy), m = a.r + b.r - 4;
@@ -1482,6 +1667,16 @@ function drawSanta() {
   ctx.fillStyle = pg; ctx.beginPath(); ctx.arc(-16, 5 + pb, 5, 0, TAU); ctx.fill();
   }
   ctx.restore(); ctx.globalAlpha = 1;
+  if (p.frz > 0) {   // заморожен: ледяная глыба вокруг, тает к концу
+    const k = Math.min(1, p.frz / QUEEN.freeze * 1.5);
+    ctx.save(); ctx.translate(p.x, p.y); ctx.globalAlpha = k;
+    ctx.fillStyle = 'rgba(150,215,255,.45)'; ctx.strokeStyle = 'rgba(230,248,255,.95)'; ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    for (let i = 0; i < 8; i++) { const a = i / 8 * TAU + .2, R = (i % 2 ? 40 : 48); ctx.lineTo(Math.cos(a) * R, Math.sin(a) * R); }
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-18, -26); ctx.lineTo(-4, -8); ctx.moveTo(14, -24); ctx.lineTo(24, 2); ctx.stroke();   // блики на льду
+    ctx.restore(); ctx.globalAlpha = 1;
+  }
   // индикатор рывка
   if (p.dashCd > 0) {
     const full = 1.6 * (1 - .2 * U('dash'));
@@ -1499,13 +1694,50 @@ function drawDying() {
     ctx.restore();
   }
 }
+// Платье Королевы. Картинка делится на треугольники веером вокруг головы. Каждая точка подола чуть
+// смещается: по краю бегут медленные волны, а при движении задний край тянется назад шлейфом, передний
+// чуть поджимается. Голова в центре веера стоит на месте. Соседние треугольники делят общие вершины,
+// поэтому щелей между ними нет. vx, vy — скорость в системе картинки (уже повёрнутой).
+const DRESS_N = 24;
+function drawDress(img, px, py, s, e, vx, vy) {
+  const R = Math.hypot(Math.max(px, img.width - px), Math.max(py, img.height - py)) + 4;
+  const vk = clamp(Math.hypot(vx, vy) / 80, 0, 1), va = Math.atan2(vy, vx), ph = e.v;
+  const vert = [];
+  for (let i = 0; i <= DRESS_N; i++) {
+    const th = i / DRESS_N * TAU, c = Math.cos(th - va);
+    // шлейф захватывает не только самый задний край, но и бока — так он шире
+    const back = vk * clamp((.35 - c) / 1.35, 0, 1), front = vk * Math.max(0, c);
+    const rot = Math.sin(time * 2.2 + ph - th * 3) * (.03 + .03 * vk) + Math.sin(th - va) * back * .1;
+    const k = 1 + back * .26 - front * .05 + Math.sin(time * 3.1 + ph + th * 2) * .022;
+    vert.push([px + Math.cos(th) * R, py + Math.sin(th) * R, Math.cos(th + rot) * R * s * k, Math.sin(th + rot) * R * s * k]);
+  }
+  for (let i = 0; i < DRESS_N; i++) {
+    const [s1x, s1y, d1x, d1y] = vert[i], [s2x, s2y, d2x, d2y] = vert[i + 1];
+    // линейное преобразование: исходный треугольник (голова, 1, 2) → новый (0, d1, d2)
+    const u1x = s1x - px, u1y = s1y - py, u2x = s2x - px, u2y = s2y - py, det = u1x * u2y - u2x * u1y;
+    const a = (d1x * u2y - d2x * u1y) / det, c = (d2x * u1x - d1x * u2x) / det;
+    const b = (d1y * u2y - d2y * u1y) / det, d = (d2y * u1x - d1y * u2x) / det;
+    ctx.save();
+    // треугольник чуть шире (на полградуса и пару пикселей), чтобы на стыках не было волосяных линий
+    const ex = 1.03, gx = (d1x + d2x) / 3, gy = (d1y + d2y) / 3;
+    ctx.beginPath(); ctx.moveTo(-gx * .03, -gy * .03);
+    ctx.lineTo(gx + (d1x - gx) * ex, gy + (d1y - gy) * ex); ctx.lineTo(gx + (d2x - gx) * ex, gy + (d2y - gy) * ex);
+    ctx.closePath(); ctx.clip();
+    ctx.transform(a, b, c, d, -(a * px + c * py), -(b * px + d * py));
+    ctx.drawImage(img, 0, 0);
+    ctx.restore();
+  }
+}
 function drawEnemy(e) {
+  if (e.hid) return;   // Королева в телепорте
   const r = e.r, wob = Math.sin(e.ph), spr = enemySprite(e);
   ctx.save(); ctx.translate(e.x, e.y);
   if (e.ghost) {   // проявляется из тьмы
     const k = clamp(1 - introT / INTRO_T, 0, 1), sc = .6 + .4 * clamp(k * 1.3, 0, 1);
     ctx.globalAlpha = clamp(k * 1.4, .1, 1); ctx.scale(sc, sc);
   }
+  if (e.appT > 0) { const k = e.appT / QUEEN.appear; ctx.globalAlpha = 1 - k * .8; ctx.scale(1 + k * .6, 1 + k * .6); }   // Королева проявляется из вихря
+  if (e.tp === 'spin' && e.tpT < .25) { const k = e.tpT / .25; ctx.globalAlpha = k; ctx.scale(.3 + .7 * k, .3 + .7 * k); }   // и сжимается, исчезая
   {   // тень падает от фонаря Санты: чем дальше, тем длиннее
     const sx = e.x - P.x, sy = e.y - P.y, sd = Math.hypot(sx, sy) || 1, off = clamp(sd * .05, 5, 18);
     ctx.save(); ctx.translate(sx / sd * off, sy / sd * off + r * .3); ctx.rotate(Math.atan2(sy, sx));
@@ -1519,12 +1751,39 @@ function drawEnemy(e) {
   }
   if (e.t === 'queen') {
     ctx.globalCompositeOperation = 'lighter';
-    const g = ctx.createRadialGradient(0, 0, 5, 0, 0, r * 2.2); g.addColorStop(0, 'rgba(120,220,255,.5)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+    const ga = qSmooth(e) ? .38 + .14 * Math.sin(time * 2.3 + e.v) : .5;   // у плавной Королевы свечение медленно дышит
+    const g = ctx.createRadialGradient(0, 0, 5, 0, 0, r * 2.2); g.addColorStop(0, `rgba(120,220,255,${ga})`); g.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, r * 2.2, 0, TAU); ctx.fill();
     ctx.globalCompositeOperation = 'source-over';
   }
-  ctx.rotate(e.a);
-  if (spr) {
+  if (!(spr && qSmooth(e))) ctx.rotate(e.a);   // остальные смотрят на Санту сразу
+  if (spr && qSmooth(e)) {
+    // плавная Королева: не переваливается, а парит; клонится в сторону, куда плывёт
+    const fa = e.fa ?? e.a, vx = (e.ivx || 0) + e.kx * .3, vy = (e.ivy || 0) + e.ky * .3;
+    const side = clamp((Math.cos(fa) * vy - Math.sin(fa) * vx) / 90, -1, 1);   // >0 — плывёт вправо от взгляда
+    ctx.rotate(fa + side * .12);
+    const fl = 1 + .018 * Math.sin(time * 1.7 + e.v); ctx.scale(fl, fl);
+    const ca = Math.cos(-(fa + side * .12)), sa = Math.sin(-(fa + side * .12)), lvx = vx * ca - vy * sa, lvy = vx * sa + vy * ca;
+    const ga = ctx.globalAlpha, rk = spr.rage && spr.rage.every(p => p.ok) ? e.rgK || 0 : 0, ak = spr.aimOK ? e.aimK || 0 : 0;
+    if (rk < 1) {   // обычная поза и замах перетекают друг в друга за 0,2 с
+      if (ak < 1) { ctx.globalAlpha = ga * (1 - rk) * (1 - ak); drawDress(spr.img, spr.px, spr.py, spr.s, e, lvx, lvy); }
+      if (ak > 0) { ctx.globalAlpha = ga * (1 - rk) * ak; drawDress(spr.aimImg, spr.aimPx, spr.aimPy, spr.aimS || spr.s, e, lvx, lvy); }
+    }
+    if (rk > 0) {   // ярость и вихрь: вращение, два кадра перетекают
+      ctx.save(); ctx.rotate(e.tp === 'spin' ? e.spinA : time * 1.3);
+      const w = .5 + .5 * Math.sin(time * 4);
+      for (const [p, al] of [[spr.rage[0], 1], [spr.rage[1], w]]) {
+        ctx.globalAlpha = ga * rk * al;
+        ctx.drawImage(p.img, -p.px * p.s, -p.py * p.s, p.img.width * p.s, p.img.height * p.s);
+      }
+      ctx.restore();
+    }
+    ctx.globalAlpha = ga;
+    if (rk > .5 && e.wind > 0) {   // в ярости перед выстрелом сжимается светлое кольцо
+      ctx.strokeStyle = 'rgba(160,240,255,.9)'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(0, 0, r * 2.4 - (1 - e.wind / .7) * r, 0, TAU); ctx.stroke();
+    }
+  } else if (spr) {
     // готовая картинка; при беге чуть покачивается и «дышит»
     ctx.save(); ctx.rotate(wob * .07); ctx.scale(1 + Math.sin(e.ph * 2) * .03, 1 - Math.sin(e.ph * 2) * .03);
     const kp = spr.prep && e.cwind > 0 ? spr.prep[e.cwind > KC_WIND / 2 ? 0 : 1] : null;   // Крампус готовится к рывку: две стадии приседания
@@ -1533,8 +1792,22 @@ function drawEnemy(e) {
     const pose = kp && kp.ok ? kp
       : aimOn ? { img: spr.aimImg, px: spr.aimPx, py: spr.aimPy, s: spr.aimS || spr.s }
       : { img: spr.img, px: spr.px, py: spr.py, s: spr.s };
-    ctx.drawImage(pose.img, -pose.px * pose.s, -pose.py * pose.s, pose.img.width * pose.s, pose.img.height * pose.s);
+    const rg = spr.rage && spr.rage.every(p => p.ok) && (e.tp === 'spin' || e.qph === 3) ? spr.rage : null;
+    if (rg) {
+      // вихрь Королевы: картинка вращается (быстро перед телепортом, медленно в ярости), два кадра плавно перетекают друг в друга
+      ctx.rotate(e.tp === 'spin' ? e.spinA : time * 1.3);
+      const ga = ctx.globalAlpha, w = .5 + .5 * Math.sin(time * 4);
+      for (const [p, al] of [[rg[0], 1], [rg[1], w]]) {
+        ctx.globalAlpha = ga * al;
+        ctx.drawImage(p.img, -p.px * p.s, -p.py * p.s, p.img.width * p.s, p.img.height * p.s);
+      }
+      ctx.globalAlpha = ga;
+    } else ctx.drawImage(pose.img, -pose.px * pose.s, -pose.py * pose.s, pose.img.width * pose.s, pose.img.height * pose.s);
     ctx.restore();
+    if (rg && e.wind > 0) {   // в ярости позы замаха нет: перед выстрелом сжимается светлое кольцо
+      ctx.strokeStyle = 'rgba(160,240,255,.9)'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(0, 0, r * 2.4 - (1 - e.wind / .7) * r, 0, TAU); ctx.stroke();
+    }
   } else if (e.t === 'imp') {
     ctx.fillStyle = '#3f9a3f'; ctx.beginPath(); ctx.ellipse(wob * 3, -r * .7, 5, 4, 0, 0, TAU); ctx.ellipse(-wob * 3, r * .7, 5, 4, 0, 0, TAU); ctx.fill();
     ctx.fillStyle = ENM.imp.col; ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.fill();
@@ -1692,10 +1965,16 @@ function drawEB(b) {
     ctx.fillStyle = '#ddd'; ctx.beginPath(); ctx.moveTo(8, -4); ctx.lineTo(16, 0); ctx.lineTo(8, 4); ctx.fill();
     ctx.fillStyle = '#e63946'; ctx.beginPath(); ctx.moveTo(-14, 0); ctx.lineTo(-18, -4); ctx.lineTo(-10, 0); ctx.lineTo(-18, 4); ctx.fill();
   } else if (b.kind === 'shard') {
+    // ледышка: летит остриём вперёд, за ней морозный след; грани разного цвета, чтобы читался объём
     ctx.rotate(b.a); ctx.globalCompositeOperation = 'lighter';
-    const g = ctx.createRadialGradient(0, 0, 1, 0, 0, 14); g.addColorStop(0, 'rgba(140,235,255,.9)'); g.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, 14, 0, TAU); ctx.fill(); ctx.globalCompositeOperation = 'source-over';
-    ctx.fillStyle = '#e6fbff'; ctx.beginPath(); ctx.moveTo(10, 0); ctx.lineTo(0, -4.5); ctx.lineTo(-8, 0); ctx.lineTo(0, 4.5); ctx.fill();
+    const tr = ctx.createLinearGradient(-34, 0, -6, 0); tr.addColorStop(0, 'rgba(140,220,255,0)'); tr.addColorStop(1, 'rgba(160,230,255,.45)');
+    ctx.fillStyle = tr; ctx.beginPath(); ctx.moveTo(-6, -3.5); ctx.lineTo(-34, 0); ctx.lineTo(-6, 3.5); ctx.fill();
+    const g = ctx.createRadialGradient(2, 0, 1, 2, 0, 11); g.addColorStop(0, 'rgba(140,235,255,.45)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(2, 0, 11, 0, TAU); ctx.fill(); ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = '#f2fdff'; ctx.beginPath(); ctx.moveTo(14, 0); ctx.lineTo(-2, -3.6); ctx.lineTo(-9, -1.5); ctx.lineTo(-9, 0); ctx.closePath(); ctx.fill();   // светлая грань
+    ctx.fillStyle = '#7cc8f0'; ctx.beginPath(); ctx.moveTo(14, 0); ctx.lineTo(-9, 0); ctx.lineTo(-9, 1.5); ctx.lineTo(-2, 3.6); ctx.closePath(); ctx.fill();   // теневая грань
+    ctx.strokeStyle = 'rgba(40,110,170,.8)'; ctx.lineWidth = .8; ctx.beginPath();
+    ctx.moveTo(14, 0); ctx.lineTo(-2, -3.6); ctx.lineTo(-9, -1.5); ctx.lineTo(-9, 1.5); ctx.lineTo(-2, 3.6); ctx.closePath(); ctx.stroke();
   } else {
     ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.beginPath(); ctx.ellipse(2, 9, b.r * .8, b.r * .4, 0, 0, TAU); ctx.fill();
     if (snowOK) {
@@ -1893,6 +2172,7 @@ function drawHUD() {
     const w = Math.min(520, W - 80), x = (W - w) / 2, yy = 112;
     ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillRect(x - 3, yy - 3, w + 6, 20);
     ctx.fillStyle = ENM[boss.t].splat; ctx.fillRect(x, yy, w * Math.max(0, boss.hp / boss.mhp), 14);
+    if (boss.t === 'queen' && !boss.old) { ctx.fillStyle = 'rgba(0,0,0,.7)'; for (const f of [QUEEN.ph2, QUEEN.ph3]) ctx.fillRect(x + w * f - 1, yy, 2, 14); }   // границы фаз
     ctx.textAlign = 'center'; ctx.font = `bold 13px ${FONT}`; ctx.fillStyle = '#fff'; ctx.fillText(ENM[boss.t].name, W / 2, yy + 12);
   }
   if (banner > 0 && state === 'play') {
@@ -1910,7 +2190,7 @@ function mixCol(a, b, t) {   // смешать два цвета '#rrggbb'
 }
 function drawCrosshair() {
   const now = performance.now(), dt = Math.min(.05, (now - chLast) / 1000); chLast = now;
-  const over = state === 'play' && enemies.some(e => !e.dead && !e.ghost && Math.hypot(e.x - mx, e.y - my) < e.r + 12);
+  const over = state === 'play' && enemies.some(e => !e.dead && !e.ghost && !e.hid && Math.hypot(e.x - mx, e.y - my) < e.r + 12);
   chHover += ((over ? 1 : 0) - chHover) * Math.min(1, dt * 14);   // плавный переход примерно за 0,1–0,2 с
   const k = chHover, R = 20 - 6 * k, col = mixCol('#9bff3c', '#ff3b3b', k);
   const shape = () => {
@@ -2189,7 +2469,9 @@ function drawLighting() {
     for (const o of orbs) L(o.x, o.y, 120, .9, PU[o.type].c, .14);
     for (const g of gifts) L(g.x, g.y, 110, .85, g.col, .1);
     const darkSurf = curSurface().dark;
-    for (const e of enemies) L(e.x, e.y, e.ghost ? 320 : e.boss ? 190 : darkSurf ? 90 : 62, e.boss ? .8 : darkSurf ? .7 : .45, e.ghost ? '#ff2b2b' : e.boss ? ENM[e.t].splat : null, e.ghost ? .18 : .08);
+    for (const e of enemies) if (e.tp === 'gone') L(e.mx, e.my, QUEEN.markR * 1.8, .5 + .5 * (1 - e.tpT / e.mkT), '#8fe8ff', .12);   // метка Королевы видна и в темноте
+    for (const s of qspikes) L(s.x, s.y, QUEEN.pk.R * 2, s.t > 0 ? .35 + .35 * (1 - s.t / s.w) : .9, '#8fe8ff', .12);   // и пики
+    for (const e of enemies) if (!e.hid) L(e.x, e.y, e.ghost ? 320 : e.boss ? 190 : darkSurf ? 90 : 62, e.boss ? .8 : darkSurf ? .7 : .45, e.ghost ? '#ff2b2b' : e.boss ? ENM[e.t].splat : null, e.ghost ? .18 : .08);
     for (const b of eb) if (b.kind !== 'arrow') L(b.x, b.y, 70, .6, b.kind === 'shard' ? '#8fe8ff' : null, .12);
     for (const m of mines) if (m.kind === 'cracker' || m.arm <= 0) L(m.x, m.y, m.kind === 'cracker' ? 130 : 55, .6, m.kind === 'cracker' ? '#ff8c3a' : '#4be37a', .1);
     for (const f of flashes) L(f.x, f.y, f.r, Math.min(1, f.t / f.max * 1.2), f.col, .22 * (f.t / f.max));
@@ -2317,6 +2599,7 @@ const PRINTS = {   // step: через сколько пикселей пути 
   thrower:    { step: 22, k: 'round', s: 5.5 },
   krampus:    { step: 42, k: 'paw',   s: 12 },
   nutcracker: { step: 34, k: 'boot',  s: 9 },
+  queen:      { step: 30, k: 'frost', s: 9 },   // иней-снежинки там, где она проплыла
 };
 let prints = [];
 function addPrint(x, y, a, k, s) {
@@ -2330,6 +2613,12 @@ function drawPrints() {
     if (al < .02) continue;
     const sz = p.s * (1 + u * .25);   // со временем расплывается
     ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.a);
+    if (p.k === 'frost') {   // иней: светлое пятно и снежинка
+      ctx.fillStyle = `rgba(170,230,255,${.13 * al})`; ctx.beginPath(); ctx.arc(0, 0, sz * 1.1, 0, TAU); ctx.fill();
+      ctx.strokeStyle = `rgba(200,245,255,${.5 * al})`; ctx.lineWidth = 1.3; ctx.beginPath();
+      for (let i = 0; i < 6; i++) { const a = i * TAU / 6; ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a) * sz, Math.sin(a) * sz); }
+      ctx.stroke(); ctx.restore(); continue;
+    }
     const shape = o => {
       ctx.beginPath();
       if (p.k === 'boot') ctx.ellipse(o, o, sz * 1.3, sz * .7, 0, 0, TAU);
@@ -2402,7 +2691,7 @@ function render() {
   if (P && state !== 'menu') {
     mines.forEach(drawMine);
     orbs.forEach(drawOrb); gifts.forEach(drawGift);
-    drawShocks();
+    drawShocks(); drawQueenMarks();
     drawDying();
     enemies.forEach(drawEnemy);
     if (!(state === 'over' && overT > 0.05)) drawSanta();
@@ -2436,7 +2725,7 @@ function render() {
   if (state === 'play' || state === 'pause') screenSpace(() => {
     if (ia < .01) drawHUD();
     drawCallouts();
-    if (DEBUG) { ctx.font = `bold 13px ${FONT}`; ctx.textAlign = 'right'; ctx.fillStyle = '#ffd23f'; ctx.fillText('DEBUG: Z X C V B — голос, I — ветер, 6 7 8 9 — новые бонусы, 0 — Гирлянда', W - 30, 88); }
+    if (DEBUG) { ctx.font = `bold 13px ${FONT}`; ctx.textAlign = 'right'; ctx.fillStyle = '#ffd23f'; ctx.fillText('DEBUG: Z X C V B — голос, I — ветер, 6 7 8 9 — новые бонусы, 0 — Гирлянда, K — Королева, J — ей −1/3 здоровья', W - 30, 88); }
   });
   drawBossIntro(ia);
 
@@ -2536,6 +2825,8 @@ addEventListener('keydown', e => {
     if (TEST_KEYS) { const tv = { KeyZ: 'double_kill', KeyX: 'triple_kill', KeyC: 'massacre', KeyV: 'dominating', KeyB: 'owning' }[e.code]; if (tv) voice(tv, true); }
     if (TEST_KEYS) { const tb = { Digit6: 'shock', Digit7: 'knock', Digit8: 'hor', Digit9: 'slowmo' }[e.code]; if (tb) orbs.push({ x: P.x + 70, y: P.y, type: tb, life: 12, ph: 0 }); }
     if (TEST_KEYS && e.code === 'Digit0') { up.chain = Math.min(5, U('chain') + 1); addText(P.x, P.y - 40, '💡 Гирлянда ' + up.chain, '#ffd23f', 20); }
+    if (TEST_KEYS && e.code === 'KeyK' && state === 'play') spawnEnemy('queen');   // тест: Снежная Королева
+    if (TEST_KEYS && e.code === 'KeyJ') { const q = enemies.find(e => e.t === 'queen' && !e.hid); if (q) damageEnemy(q, q.mhp / 3 + 1); }   // тест: снять ей треть здоровья (следующая фаза)
     if (TEST_KEYS && e.code === 'KeyI') windGust(clamp(P.x + rand(-150, 150), 120, W - 120), clamp(P.y + rand(-150, 150), 150, H - 120));
     if (e.code === 'KeyQ') cycleWeapon(1);
     if (e.code === 'Digit1') setWeapon('candy');
