@@ -3,6 +3,31 @@
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow [SemVer](https://semver.org/).
 Before 1.0 the version is 0.<build>.<patch>.
 
+## [0.37.0] — 2026-11-19
+### Added
+- Three modes: Novice (15 waves), Standard (20) and Hardcore (25). Each mode ends with a victory screen.
+- Bosses by mode: Krampus on wave 5, the Nutcracker on wave 10, the Snow Queen as the final boss. Standard ends with the Nutcracker and the Snow Queen together, Hardcore with all three bosses at once.
+- Skills screen (Tab): every upgrade by branch (Weapons, Survival, Gifts and Luck) with its level. The game pauses while it is open.
+- Each mode keeps its own record.
+- Test mode: N ends the current wave, U jumps to the last wave.
+### Changed
+- Four upgrades to choose from after each wave instead of three.
+- The wave counter shows the total, e.g. "Wave 7 / 20"; the last wave is announced as the finale.
+- Esc on the game-over screen returns to mode selection.
+### Removed
+- The three unused upgrade-card designs (gifts, rarity cards, medals).
+- The older Snow Queen versions kept in test mode for comparison.
+
+## [0.36.0] — 2026-11-19
+### Added
+- Snow Queen images: walking, casting and two rage frames.
+- Snow Queen fights in three phases, marked on her health bar. Second phase: she casts ice spikes that burst out of the ground under Santa or along his path. Third phase: she spins into a blizzard, vanishes and reappears next to Santa, and Santa is hurt and frozen if still there.
+- Snow Queen moves smoothly: she glides, turns gradually and leans into her movement; her dress sways and trails behind her, leaving snow dust and frost marks.
+- Test mode: K summons the Snow Queen, J takes a third of her health; the first waves show the Snow Queen alone, 10 lives.
+- `tools/make_sprite_black.py` cuts a character out of a black background.
+### Changed
+- Snow Queen fires icicles instead of glowing balls.
+
 ## [0.35.0] — 2026-11-16
 ### Changed
 - Ice Laser: one extra beam per Double Volley level (up to 4, fanned out); beam hits a 3× wider area.
