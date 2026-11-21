@@ -20,14 +20,16 @@
 // TODO: два языка, русский и английский: делаем при разделении кода на модули
 // TODO: арсенал: выбор оружия перед стартом, большая часть закрыта и открывается за достижения; у всего оружия равный урон в секунду
 // TODO: оружие: обсудить новое оружие вроде ракетницы (rocket launcher)
-// TODO: режимы: продумать 15-ю волну в Стандарте и Хардкоре (сейчас там Крампус второй раз)
-const VERSION = '0.37.0';   // версия игры: 0.<номер сборки>.<исправление>; история в CHANGELOG.md
+// TODO: снежкомёт отстаёт от леденцов при прокачке: на него не действуют крит, Насквозь, Упругие конфеты и Гирлянда (вариант: крит на взрыв снежка)
+const VERSION = '0.38.0';   // версия игры: 0.<номер сборки>.<исправление>; история в CHANGELOG.md
 const cv = document.getElementById('c'), ctx = cv.getContext('2d');
 const TAU = Math.PI * 2;
 const rand = (a, b) => a + Math.random() * (b - a);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 // Тестовый режим: открыть файл с ?debug в конце адреса (index_v35.html?debug). Тогда в 1-й волне лишние монстры и работают клавиши Z X C V B I, K (Снежная Королева), J (снять ей треть здоровья).
 const DEBUG = new URLSearchParams(location.search).has('debug');
+// Классика: открыть с ?classic — картинки персонажей не грузятся, все рисуются кодом, как в первых версиях. Остальное (фон, лёд, снежки) как обычно.
+const CLASSIC = new URLSearchParams(location.search).has('classic');
 // Все картинки игры создаются через new Image(): запоминаем их, чтобы показать экран загрузки и собрать фон один раз, когда всё загрузилось.
 const ALL_IMGS = [];
 { const NativeImage = window.Image; window.Image = function (...a) { const im = new NativeImage(...a); ALL_IMGS.push(im); return im; }; }
@@ -78,6 +80,10 @@ const ESPR = {
         { src: 'Media/characters/queen_rage2.png', px: 388, py: 263, s: .3 },
       ] },
   ],
+  // Снеговик-великан: картинка обычного снеговика, увеличенная; размер дальше меняется вместе с e.r (тает при отколах)
+  giant: [
+    { src: 'Media/characters/snowman_1.png', px: 249, py: 237, s: .2 },
+  ],
   // метатель: идёт со снежком в когтях, при броске заносит снежок над головой (поза крупнее на 16%, поэтому aimS)
   thrower: [
     { src: 'Media/characters/thrower_walk.png', px: 256, py: 254, s: .088, aim: 'Media/characters/thrower_throw.png', aimPx: 330, aimPy: 434, aimS: .102, hand: [111, 88] },
@@ -88,9 +94,9 @@ const ESPR = {
   ],
 };
 for (const t in ESPR) for (const v of ESPR[t]) {
-  v.img = new Image(); v.ok = false; v.img.onload = () => { v.ok = true; }; v.img.src = v.src;
-  if (v.aim) { v.aimImg = new Image(); v.aimOK = false; v.aimImg.onload = () => { v.aimOK = true; }; v.aimImg.src = v.aim; }
-  for (const p of [...(v.prep || []), ...(v.rage || [])]) { p.img = new Image(); p.ok = false; p.img.onload = () => { p.ok = true; }; p.img.src = p.src; }
+  v.img = new Image(); v.ok = false; v.img.onload = () => { v.ok = true; }; if (!CLASSIC) v.img.src = v.src;
+  if (v.aim) { v.aimImg = new Image(); v.aimOK = false; v.aimImg.onload = () => { v.aimOK = true; }; if (!CLASSIC) v.aimImg.src = v.aim; }
+  for (const p of [...(v.prep || []), ...(v.rage || [])]) { p.img = new Image(); p.ok = false; p.img.onload = () => { p.ok = true; }; if (!CLASSIC) p.img.src = p.src; }
 }
 function enemySprite(e) {
   const list = ESPR[e.t];
@@ -143,7 +149,7 @@ function drawSnowSprite(d, spin) {
 const santaImg = new Image();
 let santaOK = false;
 santaImg.onload = () => { santaOK = true; };
-santaImg.src = 'Media/characters/santa.png';
+if (!CLASSIC) santaImg.src = 'Media/characters/santa.png';
 const FONT ='"Trebuchet MS", "Segoe UI", system-ui, sans-serif';
 
 let W, H, DPR, bg, dec, dctx, vig, lm, lc, bc, bcx, sparks = [];
@@ -159,13 +165,14 @@ const ENM = {
   krampus:   { hp: 40,  sp: 72,  r: 32, pts: 300,  col: '#3b2040', splat: '#b44cff', boss: 1, name: 'КРАМПУС' },
   queen:     { hp: 90,  sp: 70,  r: 32, pts: 800,  col: '#8fd8ff', splat: '#8fe8ff', boss: 1, name: 'СНЕЖНАЯ КОРОЛЕВА', pref: 300 },
   nutcracker:{ hp: 150, sp: 52,  r: 34, pts: 1200, col: '#b3121b', splat: '#ffd23f', boss: 1, name: 'ЩЕЛКУНЧИК' },
+  giant:     { hp: 130, sp: 38,  r: 46, pts: 1000, col: '#f2f7ff', splat: '#bfe6ff', boss: 1, name: 'СНЕГОВИК-ВЕЛИКАН' },
 };
 // Режимы: сколько волн до победы и какие боссы приходят на каких волнах. Если боссов несколько, они идут в порядке списка
 // (Королева последней). Номер волны без записи — обычная волна.
 const MODES = {
   easy:     { n: 'НОВИЧОК',  waves: 15, bosses: { 5: ['krampus'], 10: ['nutcracker'], 15: ['queen'] } },
-  standard: { n: 'СТАНДАРТ', waves: 20, bosses: { 5: ['krampus'], 10: ['nutcracker'], 15: ['krampus'], 20: ['nutcracker', 'queen'] } },
-  hardcore: { n: 'ХАРДКОР',  waves: 25, bosses: { 5: ['krampus'], 10: ['nutcracker'], 15: ['krampus'], 20: ['nutcracker', 'queen'], 25: ['krampus', 'nutcracker', 'queen'] } },
+  standard: { n: 'СТАНДАРТ', waves: 20, bosses: { 5: ['krampus'], 10: ['nutcracker'], 15: ['giant'], 20: ['nutcracker', 'queen'] } },
+  hardcore: { n: 'ХАРДКОР',  waves: 25, bosses: { 5: ['krampus'], 10: ['nutcracker'], 15: ['giant'], 20: ['nutcracker', 'queen'], 25: ['krampus', 'nutcracker', 'queen'] } },
 };
 const MODE_KEYS = ['easy', 'standard', 'hardcore'];
 let mode = 'standard';
@@ -180,8 +187,12 @@ const bossesAt = n => MODES[mode].bosses[n] || [];
 //     R радиус пятна, n меток, если Санта бежит (встают на его пути), near — меток вокруг, если стоит
 const QUEEN = { ph2: 2 / 3, ph3: 1 / 3, spin: .6, mark: .75, markR: 95, cd: [4.5, 6], freeze: .7, appear: .35,
   pk: { cd: [4.5, 6.5], cast: .6, warn: .95, gap: .2, R: 62, n: 4, near: 2 } };
+// Карамель Щелкунчика: каждый 3-й бросок вместо орехов — ком карамели летит дугой туда, где стоит Санта (на земле видна метка),
+// и растекается липкой лужей. Санта в луже и ещё linger с после неё медленнее (как ловушка «Липкая карамель»).
+const CARAMEL = { every: 3, fly: .95, R: 75, life: 6, linger: 1.2 };
+let caramels = [];   // { x0, y0, x, y, t (сколько летит), land (лежит ли), life }
 let qspikes = [];   // поля ледяных пиков: { x, y, t (до удара), w (полное ожидание), up (сколько уже торчат), hit }
-const BOSS_SUB = { krampus: 'Пришёл за непослушными', queen: 'Вечная зима уже здесь', nutcracker: 'Он щёлкает не только орехи' };
+const BOSS_SUB = { krampus: 'Пришёл за непослушными', queen: 'Вечная зима уже здесь', nutcracker: 'Он щёлкает не только орехи', giant: 'Растает только весной' };
 const WEAPS = ['snowball', 'laser', 'mine'];
 const INTRO_T = 2.6;
 const PU = {
@@ -196,7 +207,7 @@ const PU = {
   bomb:     { n: 'НОВОГОДНИЙ САЛЮТ!', i: '🎆', d: 0, c: '#ff6b6b', w: 5 },
   knock:    { n: 'Снежный вихрь!',   i: '🌪️', d: 0,  c: '#e8f6ff', w: 5 },   // отбрасывает всех врагов вокруг Санты
   hor:      { n: 'Хоровод!',         i: '💫', d: 0,  c: '#ffd23f', w: 5 },   // два кольца пуль на 360°
-  shock:    { n: 'Морозный шок!',    i: '🌩️', d: 0,  c: '#9fe8ff', w: 5 },   // ледяная молния зигзагом по 16 врагам
+  shock:    { n: 'Морозный шок!',    i: '🌩️', d: 0,  c: '#9fe8ff', w: 5 },   // ледяная молния зигзагом по 26 врагам
   slowmo:   { n: 'Застывшее время',  i: '⏱️', d: 6,  c: '#9fc8ff', w: 4 },   // враги и их снаряды медленнее в 3 раза
   heal:     { n: 'Сердечко +1 жизнь', i: '❤️', d: 0,  c: '#ff4d6d', w: 6 },
   snowball: { n: 'Снежкомёт',        i: '⛄', d: 25, c: '#dff0ff', w: 7, weapon: 1 },
@@ -204,27 +215,40 @@ const PU = {
   mine:     { n: 'Ёлочные мины',     i: '💣', d: 25, c: '#4be37a', w: 7, weapon: 1 },
 };
 const INFO = Object.assign({}, PU, { coal: { n: 'Липкая карамель: замедление', i: '🍯', d: 5, c: '#e0a030' } });   // ключ coal внутренний, в игре это «Липкая карамель»
+// b — цвет шара на экране улучшений: красный — здоровье, оранжевый — урон, синий — пули, зелёный — движение, золотой — подарки
 const UPS = [
-  { k: 'dmg',    n: 'Острые леденцы',    i: '🍭', max: 8, d: '+25% к урону' },
-  { k: 'rate',   n: 'Быстрые руки',      i: '⏩', max: 6, d: '+15% к скорострельности' },
-  { k: 'multi',  n: 'Двойной залп',      i: '➕', max: 3, d: '+1 пуля в залпе\n(у лазера +1 луч)' },
-  { k: 'bounce', n: 'Упругие конфеты',   i: '🏓', max: 3, d: 'Пули отскакивают\nот стен ещё раз' },
-  { k: 'pierce', n: 'Насквозь',          i: '🎯', max: 3, d: 'Пули пробивают\nещё одного врага' },
-  { k: 'crit',   n: 'Меткий глаз',       i: '👁️', max: 5, d: '+8% шанс крита ×3' },
-  { k: 'hp',     n: 'Тёплый свитер',     i: '🧣', max: 3, d: '+1 макс. сердце\nи лечит 1' },
-  { k: 'speed',  n: 'Лёгкие лыжи',       i: '⛷️', max: 5, d: '+10% к скорости' },
-  { k: 'dash',   n: 'Реактивные сани',   i: '🛷', max: 3, d: 'Рывок (Shift)\nвосстанавливается быстрее' },
-  { k: 'vamp',   n: 'Рождественский дух', i: '✨', max: 4, d: 'Убийство может вылечить\n1 сердце (шанс 3%),\nдо 1 сердца за волну' },
-  { k: 'dur',    n: 'Долгие чудеса',     i: '⏳', max: 3, d: 'Бонусы действуют\nна 25% дольше' },
-  { k: 'magnet', n: 'Магнит-варежки',    i: '🧲', max: 3, d: 'Бонусы притягиваются\nиздалека' },
-  { k: 'gifts',  n: 'Взломщик подарков', i: '🔓', max: 2, d: 'Подарки открываются\nна 1 выстрел быстрее' },
-  { k: 'sniff',  n: 'Чутьё на ловушки',  i: '👃', max: 3, d: 'Ловушек в подарках\nменьше' },
-  { k: 'chain',  n: 'Гирлянда',          i: '💡', max: 5, d: 'Попадание бьёт током\nещё одного врага рядом\n(половина урона)' },
-  { k: 'luck',   n: 'Клевер удачи',      i: '🍀', max: 3, d: 'Подарки появляются\nна 20% чаще,\nловушек среди них не больше' },
+  { k: 'dmg',    b: 'orange',  n: 'Острые леденцы',    i: '🍭', max: 8, d: '+25% к урону' },
+  { k: 'rate',   b: 'orange',  n: 'Быстрые руки',      i: '⏩', max: 6, d: '+15% к скорострельности' },
+  { k: 'multi',  b: 'blue',    n: 'Двойной залп',      i: '➕', max: 3, d: '+1 пуля в залпе\n(у лазера +1 луч)' },
+  { k: 'bounce', b: 'blue',    n: 'Упругие конфеты',   i: '🏓', max: 3, d: 'Пули отскакивают\nот стен ещё раз',
+    lv: (a, b) => {   // уровень = сколько раз пуля леденцов отскакивает от края поля
+      const t = l => l + (l === 1 ? ' раз' : ' раза');
+      return a ? `Пули леденцов отскакивают\nот краёв поля: ${t(a)} → ${t(b)}` : `Пули леденцов отскакивают\nот краёв поля: ${t(b)}`;
+    } },
+  { k: 'pierce', b: 'blue',    n: 'Насквозь',          i: '🎯', max: 3, d: 'Пули пробивают\nещё одного врага' },
+  { k: 'crit',   b: 'orange',  n: 'Меткий глаз',       i: '👁️', max: 5, d: '+8% шанс крита ×3' },
+  { k: 'hp',     b: 'red',     n: 'Тёплый свитер',     i: '🧣', max: 3, d: '+1 макс. сердце\nи лечит 1' },
+  { k: 'speed',  b: 'green',   n: 'Лёгкие лыжи',       i: '⛷️', max: 5, d: '+10% к скорости' },
+  { k: 'dash',   b: 'green',   n: 'Реактивные сани',   i: '🛷', max: 3, d: 'Рывок (Shift)\nвосстанавливается быстрее' },
+  { k: 'vamp',   b: 'red',     n: 'Рождественский дух', i: '✨', max: 4, d: 'Убийство может вылечить\n1 сердце (шанс 3%),\nдо 1 сердца за волну',
+    lv: (a, b) => {   // цифры по уровням: шанс 3% за уровень, лимит 1 сердце за волну на уровень
+      const ch = l => 3 * l + '%', hs = l => l + (l === 1 ? ' сердца' : ' сердец');
+      return a ? `Шанс вылечить сердце\nпри убийстве: ${ch(a)} → ${ch(b)}\nЗа волну: до ${hs(a)} → ${hs(b)}`
+               : `Шанс вылечить сердце\nпри убийстве: ${ch(b)}\nЗа волну: до ${hs(b)}`;
+    } },
+  { k: 'dur',    b: 'gold',    n: 'Долгие чудеса',     i: '⏳', max: 3, d: 'Бонусы действуют\nна 25% дольше' },
+  { k: 'magnet', b: 'gold',    n: 'Магнит-варежки',    i: '🧲', max: 3, d: 'Бонусы притягиваются\nиздалека' },
+  { k: 'gifts',  b: 'gold',    n: 'Взломщик подарков', i: '🔓', max: 2, d: 'Подарки открываются\nна 1 выстрел быстрее' },
+  { k: 'sniff',  b: 'gold',    n: 'Чутьё на ловушки',  i: '👃', max: 3, d: 'Ловушек в подарках\nменьше' },
+  { k: 'chain',  b: 'blue',    n: 'Гирлянда',          i: '💡', max: 5, d: 'Попадание бьёт током\nещё одного врага рядом\n(половина урона)' },
+  { k: 'luck',   b: 'gold',    n: 'Клевер удачи',      i: '🍀', max: 3, d: 'Подарки появляются\nна 20% чаще,\nловушек среди них не больше' },
 ];
 const GIFT_COLORS = ['#e63946', '#2a9d8f', '#4361ee', '#f77f00', '#9b5de5', '#06d6a0'];
 const LIGHTS = ['#ff4d4d', '#ffd23f', '#4be37a', '#4db8ff'];
 const MK = { 2: ['ДАБЛ КИЛЛ!', '#ffd23f'], 3: ['ТРИПЛ КИЛЛ!', '#ff9f1a'], 5: ['МАССАКР!', '#ff4d5a'], 8: ['АПОКАЛИПСИС!', '#ff2bd6'] };
+
+// описание улучшения; у кого есть lv — с цифрами уровней: from — сейчас (0 — ещё не взято), to — после выбора
+function upDesc(u, from, to) { return u.lv ? u.lv(from, to) : u.d; }
 
 /* ---------- СОСТОЯНИЕ ---------- */
 let state = 'menu';            // menu | play | pause | upgrade | over
@@ -565,7 +589,7 @@ function reset() {
         dashCd: 0, dashT: 0, dvx: 0, dvy: 0, beam: null, lt: 0, bt: 0, frz: 0 };
   if (TEST_LIVES) P.hp = P.max = TEST_LIVES;
   bullets = []; enemies = []; gifts = []; orbs = []; parts = []; texts = []; rings = [];
-  mines = []; eb = []; shocks = []; qspikes = []; callouts = []; flashes = []; prints = []; ice = []; streaks = []; windT = 0; dying = []; zaps = [];
+  mines = []; eb = []; shocks = []; qspikes = []; caramels = []; blizT = 0; blizK = 0; callouts = []; flashes = []; prints = []; ice = []; streaks = []; windT = 0; dying = []; zaps = [];
   score = 0; combo = 0; comboT = 0; shake = 0; buffs = {}; kills = 0; hurtFlash = 0; nextGift = 4; overT = 0;
   up = {}; clearT = 0; mk = 0; mkT = 0; slowT = 0; autoSlow = 0; autoSlowCd = 0; zoom = 0; whiteFlash = 0; introE = null; introT = 0;
   if (dctx) dctx.clearRect(0, 0, W, H);
@@ -682,8 +706,11 @@ function burst(x, y, n, cols, sp, life, size, glow = false, grav = 0) {
 }
 function addText(x, y, s, col = '#fff', size = 18) { texts.push({ x, y, s, col, size, life: 1 }); }
 function addRing(x, y, max, col, life = .5) { rings.push({ x, y, r: 0, max, col, life, t: life }); }
-function callout(s, col = '#fff', size = 56) {
-  callouts.push({ s, col, size, t: 1.5, max: 1.5 });
+// soft: похвала за серии (Дабл килл, Доминируешь…) — полупрозрачная, меньше и короче, чтобы не мешала играть
+const SOFT_CALLOUT = { alpha: .4, size: .75, t: 1.1 };
+function callout(s, col = '#fff', size = 56, soft = false) {
+  const t = soft ? SOFT_CALLOUT.t : 1.5;
+  callouts.push({ s, col, size: soft ? size * SOFT_CALLOUT.size : size, t, max: t, soft });
   if (callouts.length > 3) callouts.shift();
   sfx.callout();
 }
@@ -702,8 +729,21 @@ function addScore(pts, x, y) {
   const v = pts * m; score += v;
   addText(x, y - 14, '+' + v, m > 1 ? '#ffe066' : '#fff', 14 + Math.min(m, 8) * 1.5);
 }
+// Тело Санты для врагов: ближе этого края они не подходят, касание края ранит. P.r (16) — меньше, по нему попадают снаряды.
+const bodyR = () => santaOK ? 32 : 20;
 function muzzle() { const d = santaOK ? 74 : 34; return [P.x + Math.cos(P.a) * d, P.y + Math.sin(P.a) * d]; }
 
+// Выстрел в упор: если враг стоит между Сантой и дулом, снаряд появляется прямо перед ним, а не за его спиной
+function pointBlank(a, x0, y0) {
+  const c = Math.cos(a), s = Math.sin(a), L = Math.hypot(x0 - P.x, y0 - P.y);
+  let best = L;
+  for (const e of enemies) {
+    if (e.dead || e.ghost || e.hid) continue;
+    const ex = e.x - P.x, ey = e.y - P.y, t = ex * c + ey * s, off = Math.abs(ex * s - ey * c);
+    if (off < e.r && t > 0) { const near = t - Math.sqrt(e.r * e.r - off * off) - 4; if (near < best) best = Math.max(0, near); }
+  }
+  return best < L ? [P.x + c * best, P.y + s * best] : [x0, y0];
+}
 function fire() {
   if (P.cd > 0 || P.weapon === 'laser') return;
   const w = P.weapon, rm = rateMul(), [mxp, myp] = muzzle();
@@ -724,7 +764,8 @@ function fire() {
     const dist = Math.max(120, Math.hypot(mx - P.x, my - P.y));
     for (let i = 0; i < Math.min(n, 5); i++) {
       const a = P.a + (n > 1 ? (i / (Math.min(n, 5) - 1 || 1) - .5) * Math.min(arc, .5) : 0);
-      bullets.push({ x: mxp, y: myp, vx: Math.cos(a) * 620, vy: Math.sin(a) * 620, a, gren: true,   // было 430
+      const [sx, sy] = pointBlank(a, mxp, myp);
+      bullets.push({ x: sx, y: sy, vx: Math.cos(a) * 620, vy: Math.sin(a) * 620, a, gren: true,   // было 430
         dist, trav: 0,
         life: 3, hit: new Set(), col: '#fff', dead: false, dmg: 4 * dmgMul() });
     }
@@ -736,8 +777,8 @@ function fire() {
   const col = buffs.pierce > 0 ? '#7fe3ff' : (buffs.ricochet > 0 || U('bounce')) ? '#ff7ad9' : '#ff4d5a';
   for (let i = 0; i < n; i++) {
     const a = P.a + (n > 1 ? (i / (n - 1) - .5) * arc : rand(-.03, .03));
-    const crit = Math.random() < .08 * U('crit');
-    bullets.push({ x: mxp, y: myp, vx: Math.cos(a) * 760, vy: Math.sin(a) * 760, a,
+    const crit = Math.random() < .08 * U('crit'), [sx, sy] = pointBlank(a, mxp, myp);
+    bullets.push({ x: sx, y: sy, vx: Math.cos(a) * 760, vy: Math.sin(a) * 760, a,
       dmg: dmgMul() * (crit ? 3 : 1), crit, pierce: buffs.pierce > 0 ? 99 : U('pierce'),
       bounce: (buffs.ricochet > 0 ? 3 : 0) + U('bounce'), life: 1.4, hit: new Set(), col: crit ? '#ff9f1a' : col, dead: false });
   }
@@ -764,17 +805,178 @@ function explode(x, y, R, dmg, hurtP = false, col = '#ffd23f') {
     damageEnemy(e, dmg, (e.x - x) / d * 260, (e.y - y) / d * 260);
   }
   for (const g of gifts) if (!g.dead && Math.hypot(g.x - x, g.y - y) < R) hitGift(g);
-  for (const b of eb) if (b.kind === 'snow' && Math.hypot(b.x - x, b.y - y) < R) b.dead = true;
+  for (const b of eb) if (shootable(b) && Math.hypot(b.x - x, b.y - y) < R) b.dead = true;
   if (hurtP && Math.hypot(P.x - x, P.y - y) < R + P.r) hurtPlayer({ x, y });
+}
+// Попадание по снеговику: со стороны Санты отлетают комья снега и снежная пыль (не чаще раза в 0,05 с — лазер бьёт каждый кадр).
+// У маленьких снеговиков комьев меньше и они мельче — по размеру врага.
+// Заморозка: враг внутри ледяной глыбы (рисуется кодом). Глыба нарастает за .15 с, к концу трескается, потом раскалывается.
+let iceSndT = 0;
+function iceShatter(e) {
+  e.frOn = false;
+  burst(e.x, e.y, 12 + Math.round(e.r / 3), ['#ffffff', '#dff6ff', '#9fe0ff', '#bfeaff'], 240, .55, 3.5, false);
+  burst(e.x, e.y, 6, ['#e8fbff', '#9fe8ff'], 140, .4, 2.5, true);
+  if (time - iceSndT > .08) { iceSndT = time; tone(2400, .12, 'triangle', .025, -900); tone(3300, .08, 'sine', .018, -1200, .03); }   // звон, не чаще 12 раз в секунду
+}
+function iceSize(e, r) { return r * 1.12; }   // размер куба заморозки — по телу врага; руки, когти, ветки могут торчать наружу
+const hs01 = (i, s) => { const v = Math.sin(i * 12.9898 + s) * 43758.5453; return v - Math.floor(v); };   // псевдослучайное 0..1, одно и то же для врага
+// Объёмный ледяной шпиль: вид сверху на четырёхгранную пирамидку, лежащую остриём наружу.
+// Свет сверху-слева: одна грань светлая, другая в тени, по ребру белый блик, на кончике искра, на земле тень вправо-вниз.
+// Рисуется в текущей системе координат: основание в (0,0), направление a, длина L, полуширина wd.
+const ICE_LIGHT = [-.6, -.8];   // откуда свет (в мире)
+function iceSpire(a, L, wd, al = 1) {
+  if (L < 1) return;
+  const c = Math.cos(a), s = Math.sin(a), px = -s, py = c;   // вдоль и поперёк шпиля
+  const tx = c * L, ty = s * L, b1x = px * wd, b1y = py * wd, b2x = -px * wd, b2y = -py * wd;
+  ctx.save(); ctx.globalAlpha *= al;
+  // тень: шпиль высокий, поэтому тень от кончика уходит вправо-вниз
+  ctx.fillStyle = 'rgba(0,8,30,.3)'; ctx.beginPath(); ctx.moveTo(b1x, b1y); ctx.lineTo(tx + L * .18, ty + L * .26); ctx.lineTo(b2x, b2y); ctx.closePath(); ctx.fill();
+  const lit = side => clamp(.5 + .5 * (side * (px * -ICE_LIGHT[0] + py * -ICE_LIGHT[1])) * -1, 0, 1);   // насколько грань повёрнута к свету
+  for (const [bx, by, side] of [[b1x, b1y, 1], [b2x, b2y, -1]]) {
+    const k = lit(side), g = ctx.createLinearGradient(0, 0, tx, ty);
+    const d = `rgba(${40 + 120 * k},${110 + 110 * k},${190 + 60 * k},.96)`, t = `rgba(${200 + 55 * k},${240 + 15 * k},255,.98)`;
+    g.addColorStop(0, d); g.addColorStop(1, t);
+    ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(bx, by); ctx.lineTo(tx, ty); ctx.closePath(); ctx.fill();
+  }
+  ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.lineWidth = Math.max(1, wd * .18); ctx.lineCap = 'round';   // ребро
+  ctx.beginPath(); ctx.moveTo(c * L * .08, s * L * .08); ctx.lineTo(tx, ty); ctx.stroke();
+  ctx.strokeStyle = 'rgba(20,60,120,.45)'; ctx.lineWidth = 1;   // тёмный контур, чтобы шпиль читался на светлом снегу
+  ctx.beginPath(); ctx.moveTo(b1x, b1y); ctx.lineTo(tx, ty); ctx.lineTo(b2x, b2y); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.beginPath(); ctx.arc(tx - c * 2, ty - s * 2, Math.max(1.2, wd * .22), 0, TAU); ctx.fill();   // искра на кончике
+  ctx.restore();
+}
+function iceCore(R, k) {   // ледяной ком в центре, откуда растут шпили: шар с бликом
+  const rr = R * (.16 + .08 * k), g = ctx.createRadialGradient(-rr * .35, -rr * .4, rr * .1, 0, 0, rr);
+  g.addColorStop(0, 'rgba(250,255,255,.95)'); g.addColorStop(.5, 'rgba(150,215,250,.9)'); g.addColorStop(1, 'rgba(50,120,200,.85)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, rr, 0, TAU); ctx.fill();
+}
+// Заморозка: враг внутри ледяного куба. Вид сверху с небольшим наклоном: видна верхняя грань и боковые (нижняя и правая).
+// Грани — прямоугольники с чуть неровными краями (у каждого врага свои), лёд полупрозрачный, враг виден внутри.
+// Куб нарастает за .15 с, к концу трескается, потом раскалывается (iceShatter). Размер — по размаху врага (iceSize).
+function drawFrostGround(e, r) {   // под кубом: иней на снегу
+  const R = iceSize(e, r), k = clamp((e.frA || 0) / .12, 0, 1);
+  const g = ctx.createRadialGradient(0, R * .15, R * .3, 0, R * .15, R * 1.4);
+  g.addColorStop(0, `rgba(150,215,255,${.3 * k})`); g.addColorStop(1, 'rgba(190,235,255,0)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, R * .15, R * 1.4, 0, TAU); ctx.fill();
+}
+function cubeOutline(hw, hh, sd) {   // контур грани: 4 угла чуть сдвинуты, на каждой стороне 2 неровности
+  const c = [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]].map(([x, y], i) => [x + (hs01(i, sd) - .5) * hw * .12, y + (hs01(i, sd + 9) - .5) * hh * .12]);
+  const pts = [];
+  for (let i = 0; i < 4; i++) {
+    const [ax, ay] = c[i], [bx, by] = c[(i + 1) % 4], nx = -(by - ay), ny = bx - ax, nl = Math.hypot(nx, ny) || 1;
+    pts.push([ax, ay]);
+    for (const t of [.35, .7]) { const j = (hs01(i * 3 + t * 10, sd + 4) - .5) * Math.min(hw, hh) * .08; pts.push([ax + (bx - ax) * t + nx / nl * j, ay + (by - ay) * t + ny / nl * j]); }
+  }
+  return pts;
+}
+// Трещины во льду: из точки удара расходятся ломаные линии, по ходу ветвятся; к концу лёд мутнеет вокруг точки удара.
+// Каждая линия — тёмная тень и белая трещина поверх, у начала толще, к концу тоньше. Форма своя у каждого врага (по e.v).
+function iceCrackPaths(e) {
+  if (e.crk && e.crk.v === e.v) return e.crk.p;
+  const p = [], ox = (hs01(5, e.v) - .5) * .7, oy = (hs01(6, e.v) - .5) * .6, n = 5;
+  for (let j = 0; j < n; j++) {
+    let a = j / n * TAU + (hs01(j, e.v + 30) - .5) * .9, x = ox, y = oy;
+    const pts = [[x, y]], segs = 5, L = .55 + hs01(j, e.v + 31) * .55;
+    for (let k = 0; k < segs; k++) {
+      a += (hs01(j * 7 + k, e.v + 32) - .5) * .8; x += Math.cos(a) * L / segs; y += Math.sin(a) * L / segs; pts.push([x, y]);
+      if ((k === 1 || k === 3) && hs01(j * 5 + k, e.v + 33) > .45) {   // ответвление: появляется позже основной трещины
+        let ba = a + (hs01(j + k, e.v + 34) > .5 ? 1 : -1) * (.6 + hs01(j, e.v + 35) * .5), bx = x, by = y; const bp = [[bx, by]];
+        for (let q = 0; q < 3; q++) { ba += (hs01(j * 3 + q, e.v + 36) - .5) * .7; bx += Math.cos(ba) * L * .14; by += Math.sin(ba) * L * .14; bp.push([bx, by]); }
+        p.push({ pts: bp, from: .35 + k * .1, w: .7 });
+      }
+    }
+    p.push({ pts, from: j * .05, w: 1 });
+  }
+  e.crk = { v: e.v, p, ox, oy };
+  return p;
+}
+function drawIceCracks(e, S, end) {
+  const paths = iceCrackPaths(e), { ox, oy } = e.crk;
+  const mg = ctx.createRadialGradient(ox * S, oy * S, 0, ox * S, oy * S, S * (.2 + end * .6));   // лёд мутнеет вокруг удара
+  mg.addColorStop(0, `rgba(255,255,255,${.45 * end})`); mg.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = mg; ctx.fillRect(-S * 2, -S * 2, S * 4, S * 4);
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  for (const c of paths) {
+    const k = clamp((end - c.from) / (1 - c.from) * 1.4, 0, 1);   // сколько трещины уже прошло
+    if (k <= 0) continue;
+    const m = (c.pts.length - 1) * k;
+    for (const [col, off, wk] of [['rgba(20,60,110,.5)', .9, 1.4], [`rgba(255,255,255,${.75 + .25 * end})`, 0, 1]]) {
+      ctx.strokeStyle = col;
+      for (let i = 0; i < Math.ceil(m); i++) {
+        const [ax, ay] = c.pts[i], [bx0, by0] = c.pts[i + 1], f = Math.min(1, m - i), bx = ax + (bx0 - ax) * f, by = ay + (by0 - ay) * f;
+        ctx.lineWidth = (2.2 * (1 - i / c.pts.length) + .5) * c.w * wk * clamp(S / 30, .7, 1.4);
+        ctx.beginPath(); ctx.moveTo(ax * S + off, ay * S + off); ctx.lineTo(bx * S + off, by * S + off); ctx.stroke();
+      }
+    }
+  }
+  ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.beginPath();   // звёздочка в точке удара
+  for (let i = 0; i < 10; i++) { const a = i / 10 * TAU, rr = (i % 2 ? .03 : .075) * S * (.5 + end); ctx.lineTo(ox * S + Math.cos(a) * rr, oy * S + Math.sin(a) * rr); }
+  ctx.closePath(); ctx.fill();
+}
+function drawIceCube(e, r) {
+  const t = e.frA || 0, g = clamp(t / .15, 0, 1), end = e.fr < .7 ? 1 - e.fr / .7 : 0;
+  const S = iceSize(e, r) * (g < 1 ? .55 + .5 * (1 - (1 - g) * (1 - g)) : 1.05 - .05 * clamp((t - .15) / .1, 0, 1));
+  const hw = S * .92, hh = S * .86, dx = S * .1, dy = S * .3;   // полуширина, полувысота верхней грани; сдвиг боковых граней (толщина куба)
+  const top = cubeOutline(hw, hh, e.v).map(([x, y]) => [x - dx * .5, y - dy * .5]);
+  const bot = top.map(([x, y]) => [x + dx, y + dy]);
+  ctx.save();
+  if (!(enemySprite(e) && e.t === 'queen')) ctx.rotate(-e.a);   // куб стоит ровно по миру, а не по повороту врага
+  ctx.rotate((hs01(3, e.v) - .5) * .25);   // и чуть повёрнут, у каждого по-своему
+  ctx.globalAlpha *= clamp(g * 2.5, 0, 1);
+  const path = pts => { ctx.beginPath(); pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.closePath(); };
+  // боковые грани: между краем верхней грани и тем же краем, сдвинутым вниз-вправо; нижние темнее правых
+  const n = top.length;
+  for (let i = 0; i < n; i++) {
+    const [ax, ay] = top[i], [bx, by] = top[(i + 1) % n], ex = bx - ax, ey = by - ay;
+    const face = ey * dx - ex * dy;   // грань видна, если смотрит вниз/вправо
+    if (face <= 0) continue;
+    const down = Math.abs(ex) > Math.abs(ey);
+    ctx.fillStyle = down ? 'rgba(55,120,190,.82)' : 'rgba(90,160,220,.78)';
+    path([[ax, ay], [bx, by], bot[(i + 1) % n], bot[i]]); ctx.fill();
+  }
+  ctx.strokeStyle = 'rgba(20,70,130,.55)'; ctx.lineWidth = 1.2; path(bot); ctx.stroke();   // нижний контур
+  // верхняя грань: полупрозрачная, враг виден сквозь неё
+  const tg = ctx.createLinearGradient(-hw, -hh, hw, hh);
+  tg.addColorStop(0, 'rgba(225,248,255,.55)'); tg.addColorStop(.6, 'rgba(160,215,250,.42)'); tg.addColorStop(1, 'rgba(110,180,235,.5)');
+  ctx.fillStyle = tg; path(top); ctx.fill();
+  ctx.save(); path(top); ctx.clip();   // блики и пузырьки внутри верхней грани
+  ctx.fillStyle = 'rgba(255,255,255,.28)'; ctx.beginPath(); ctx.moveTo(-hw, -hh * .2); ctx.lineTo(-hw * .2, -hh); ctx.lineTo(hw * .05, -hh); ctx.lineTo(-hw, hh * .05); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,.18)'; ctx.beginPath(); ctx.moveTo(-hw * .1, hh); ctx.lineTo(hw, -hh * .1); ctx.lineTo(hw, hh * .1); ctx.lineTo(hw * .1, hh); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,.5)';
+  for (let i = 0; i < 5; i++) { ctx.beginPath(); ctx.arc((hs01(i, e.v + 20) - .5) * hw * 1.6, (hs01(i, e.v + 21) - .5) * hh * 1.6, 1 + hs01(i, e.v + 22) * 1.6, 0, TAU); ctx.fill(); }
+  if (end > 0) drawIceCracks(e, S, end);
+  ctx.restore();
+  // кромка верхней грани: светлая сверху-слева, темнее снизу-справа
+  ctx.lineJoin = 'round';
+  for (let i = 0; i < n; i++) {
+    const [ax, ay] = top[i], [bx, by] = top[(i + 1) % n], lit = (bx - ax) - (by - ay) > 0;
+    ctx.strokeStyle = lit ? 'rgba(255,255,255,.95)' : 'rgba(200,235,255,.7)'; ctx.lineWidth = lit ? 2.2 : 1.4;
+    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+  }
+  ctx.restore();
+}
+function snowChips(e) {
+  if (time - (e.chT || 0) < .05) return;
+  e.chT = time;
+  const a0 = Math.atan2(P.y - e.y, P.x - e.x) + rand(-.6, .6), hx = e.x + Math.cos(a0) * e.r * .85, hy = e.y + Math.sin(a0) * e.r * .85;
+  const k = e.t === 'giant' ? 1 : .65;
+  for (let i = 0; i < (e.t === 'giant' ? 8 : 5) && parts.length < 1600; i++) {
+    const a = a0 + rand(-1, 1), v = rand(150, 380), life = rand(.4, .75);
+    parts.push({ x: hx, y: hy, vx: Math.cos(a) * v * k, vy: Math.sin(a) * v * k, life, max: life, size: rand(3, 8) * k,
+      col: ['#ffffff', '#eef5ff', '#d8e8fb'][i % 3], glow: false, grav: 0, chunk: true });
+  }
+  burst(hx, hy, 5, ['#ffffff', '#dff0ff'], 90, .35, 2, false);   // пыль
 }
 function damageEnemy(e, dmg, kx = 0, ky = 0) {
   if (e.dead || e.ghost || e.hid) return;   // hid: Королева в телепорте, её нет на поле
   e.hp -= dmg; e.fl = .1;
+  if (SNOWY[e.t]) snowChips(e);
   if (!e.boss) { e.kx += kx; e.ky += ky; }
   if (e.hp <= 0) killEnemy(e); else sfx.hit();
 }
 function killEnemy(e) {
   e.dead = true; kills++;
+  if (e.fr > 0) iceShatter(e);   // убит во льду: лёд разлетается
   const ds = enemySprite(e);
   if (ds) dying.push({ spr: ds, x: e.x, y: e.y, a: e.a, t: .18 });
   const d = ENM[e.t];
@@ -783,12 +985,12 @@ function killEnemy(e) {
   addScore(d.pts, e.x, e.y);
   // мульти-килл
   mk = mkT > 0 ? mk + 1 : 1; mkT = .55;
-  if (MK[mk]) { callout(MK[mk][0], MK[mk][1], 48 + mk * 2); voice(VOICE_RULES.burst[mk]); autoSlowMo(AUTO_SLOW.burst[mk]); }
+  if (MK[mk]) { callout(MK[mk][0], MK[mk][1], 48 + mk * 2, true); voice(VOICE_RULES.burst[mk]); autoSlowMo(AUTO_SLOW.burst[mk]); }
   // комбо-вехи
-  if (mult() > oldM && mult() === 8) { callout('МАКСИМУМ ×8!', '#ffd23f', 52); whiteFlash = .5; addRing(P.x, P.y, 300, '#ffd23f', .7); }
-  else if (combo === 15) callout('РАЗОГРЕВ!', '#9ae6ff', 44);
-  else if (combo === 30) { callout('ДОМИНИРУЕШЬ!', '#ff9f1a', 50); voice(VOICE_RULES.streak[30]); autoSlowMo(AUTO_SLOW.streak[30]); }
-  else if (combo === 60) { callout('ТЫ ВСЕХ РВЁШЬ!', '#ff2bd6', 56); voice(VOICE_RULES.streak[60]); autoSlowMo(AUTO_SLOW.streak[60]); }
+  if (mult() > oldM && mult() === 8) { callout('МАКСИМУМ ×8!', '#ffd23f', 52, true); whiteFlash = .5; addRing(P.x, P.y, 300, '#ffd23f', .7); }
+  else if (combo === 15) callout('РАЗОГРЕВ!', '#9ae6ff', 44, true);
+  else if (combo === 30) { callout('ДОМИНИРУЕШЬ!', '#ff9f1a', 50, true); voice(VOICE_RULES.streak[30]); autoSlowMo(AUTO_SLOW.streak[30]); }
+  else if (combo === 60) { callout('ТЫ ВСЕХ РВЁШЬ!', '#ff2bd6', 56, true); voice(VOICE_RULES.streak[60]); autoSlowMo(AUTO_SLOW.streak[60]); }
   burst(e.x, e.y, d.boss ? 70 : 16, [d.splat, d.col, '#fff'], d.boss ? 400 : 230, .6, d.boss ? 6 : 4, false, 200);
   splat(e.x, e.y, d.splat, e.r);
   if (d.boss) {
@@ -886,13 +1088,14 @@ function bomb() {
 }
 function knock() {   // «Снежный вихрь»: волна от Санты отбрасывает всех вокруг, снаряды врагов исчезают
   sfx.wind(); shake = Math.max(shake, 10);
-  addRing(P.x, P.y, 420, '#e8f6ff', .6); addRing(P.x, P.y, 260, '#bfe8ff', .45);
-  burst(P.x, P.y, 70, ['#fff', '#e8f6ff', '#bfe8ff'], 650, .7, 4);
+  const R = 650;   // радиус вихря (было 460)
+  addRing(P.x, P.y, R, '#e8f6ff', .7); addRing(P.x, P.y, R * .6, '#bfe8ff', .5); addRing(P.x, P.y, R * .3, '#fff', .35);
+  burst(P.x, P.y, 110, ['#fff', '#e8f6ff', '#bfe8ff'], 900, .8, 4);
   for (const e of enemies) {
     if (e.dead || e.ghost || e.hid) continue;
     const dx = e.x - P.x, dy = e.y - P.y, d = Math.hypot(dx, dy) || 1;
-    if (d > 460) continue;
-    const f = (e.boss ? 350 : 1400) * (1 - d / 520);   // ближних отбрасывает сильнее, боссов слабо
+    if (d > R) continue;
+    const f = (e.boss ? 550 : 2200) * (1 - .55 * d / R);   // ближних сильнее, но и дальних заметно; боссов слабее (было 1400/350 и почти ноль у края)
     e.kx += dx / d * f; e.ky += dy / d * f; e.ivx = 0; e.ivy = 0;
     damageEnemy(e, 1);
   }
@@ -914,8 +1117,8 @@ function horovod() {   // «Хоровод»: два кольца по 24 пул
 function frostShock() {   // «Морозный шок»: ледяная молния от Санты прыгает зигзагом по ближайшим врагам, бьёт и замораживает
   sfx.nova(); whiteFlash = Math.max(whiteFlash, .15); shake = Math.max(shake, 6);
   const done = new Set(); let prev = P;
-  for (let k = 0; k < 16; k++) {
-    let nx = null, nd = k ? 260 : 420;   // первый прыжок от Санты дальний, дальше от врага к врагу
+  for (let k = 0; k < 26; k++) {   // было 16 врагов
+    let nx = null, nd = k ? 340 : 520;   // первый прыжок от Санты дальний, дальше от врага к врагу (было 420 и 260)
     for (const e of enemies) {
       if (e.dead || e.ghost || e.hid || done.has(e)) continue;
       const d = Math.hypot(e.x - prev.x, e.y - prev.y);
@@ -926,9 +1129,9 @@ function frostShock() {   // «Морозный шок»: ледяная мол�
     done.add(nx); prev = nx;
     setTimeout(() => {   // прыжки идут друг за другом, видно, как молния бежит
       if (state !== 'play') return;
-      zaps.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y, col: '#9fe8ff', t: .3, max: .3, w: 8, seed: Math.random() * 99 });
-      flashes.push({ x: b.x, y: b.y, r: 140, t: .2, max: .2, col: '#9fe8ff' });
-      burst(b.x, b.y, 10, ['#fff', '#9fe8ff', '#bfe8ff'], 220, .4, 3, true);
+      zaps.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y, col: '#9fe8ff', t: .4, max: .4, w: 15, seed: Math.random() * 99 });
+      flashes.push({ x: b.x, y: b.y, r: 170, t: .25, max: .25, col: '#9fe8ff' });
+      burst(b.x, b.y, 16, ['#fff', '#9fe8ff', '#bfe8ff'], 220, .4, 3, true);
       if (!b.dead) { b.fr = Math.max(b.fr || 0, .8); damageEnemy(b, 6 * dmgMul()); }
       sfx.zap();
     }, k * 45);
@@ -946,8 +1149,9 @@ function chainZap(from, dmg) {   // «Гирлянда»: разряд пере�
     }
     if (!nx) break;
     const col = LIGHTS[k % LIGHTS.length];   // каждый прыжок своего цвета, как лампочки гирлянды
-    zaps.push({ x1: cur.x, y1: cur.y, x2: nx.x, y2: nx.y, col, t: .16, seed: Math.random() * 99 });
-    flashes.push({ x: nx.x, y: nx.y, r: 90, t: .12, max: .12, col });
+    zaps.push({ x1: cur.x, y1: cur.y, x2: nx.x, y2: nx.y, col, t: .28, max: .28, seed: Math.random() * 99 });   // было .16 с
+    flashes.push({ x: nx.x, y: nx.y, r: 130, t: .18, max: .18, col });
+    burst(nx.x, nx.y, 5, [col, '#fff'], 160, .3, 2.5, true);
     done.add(nx); cur = nx;
     damageEnemy(nx, dmg);
   }
@@ -991,7 +1195,8 @@ function trapEffect(g) {
 /* ---------- УЛУЧШЕНИЯ ---------- */
 // Экран выбора улучшения: ёлочные игрушки на нитках, выбранная разбивается
 const PICK_DUR = .6;   // сколько секунд идёт анимация выбора
-let chosen = null, uiParts = [];
+let chosen = null, uiParts = [];   // chosen: { i (номер шара, -1 при свободном выборе), u (улучшение), at }
+let freePick = false;   // после волны с боссом: вместо 4 шаров любой навык из дерева
 const ease = t => 1 - Math.pow(1 - clamp(t, 0, 1), 3);
 const easeBack = t => { t = clamp(t, 0, 1); return 1 + 2.7 * Math.pow(t - 1, 3) + 1.7 * Math.pow(t - 1, 2); };
 
@@ -1000,6 +1205,7 @@ function openUpgrade() {
   shuffle(pool);
   cards = pool.slice(0, 4);   // четыре улучшения на выбор
   if (!cards.length) { startWave(wave + 1); return; }   // всё прокачано до максимума: сразу следующая волна
+  freePick = bossesAt(wave).length > 0;   // награда за босса: свободный выбор
   state = 'upgrade'; upT = 0; chosen = null; uiParts = [];
   sfx.wave();
 }
@@ -1019,19 +1225,28 @@ function uiBurst(x, y, n, cols, sp, life, size, shard = false, g = 0) {
       size: size * rand(.6, 1.3), col: cols[i % cols.length], rot: rand(0, TAU), vr: rand(-12, 12), shard });
   }
 }
-// клик по карточке: сначала анимация выбора, улучшение даётся по её окончании (applyCard)
+// клик по карточке: сначала анимация выбора, улучшение даётся по её окончании (applyUp)
 function pickCard(i) {
   if (chosen || !cards[i] || upT < .35) return;
-  chosen = { i, at: upT };
+  chosen = { i, u: cards[i], at: upT };
   const r = cardRects()[i];
   // шар разбивается
-  const B = BAUBLES[i % BAUBLES.length];
+  const B = BAUBLES[cards[i].b];
   uiBurst(r.cx, r.cy, 34, [B[0], B[1], '#ffd23f', '#ffffff'], 480, 1, 10, true, 900);
   uiBurst(r.cx, r.cy, 24, ['#fff', '#fff3a0'], 300, .7, 2.5);
   noise(.3, .18, 7000); tone(2300, .3, 'sine', .04, -700); tone(3100, .2, 'triangle', .02, -900, .04);
 }
-function applyCard(i) {
-  const u = cards[i];
+// свободный выбор: клик по строке в дереве навыков
+function pickFree(k) {
+  const u = UPS.find(q => q.k === k);
+  if (chosen || upT < .35 || !u || U(k) >= u.max) return;
+  chosen = { i: -1, u, at: upT };
+  const r = skillLayout().rows.find(r => r.k === k);
+  uiBurst(r.ix, r.y + r.h / 2, 30, [r.b.c, '#ffd23f', '#ffffff'], 380, .9, 6, true, 600);
+  uiBurst(r.ix, r.y + r.h / 2, 20, ['#fff', '#fff3a0'], 260, .6, 2.5);
+  tone(1500, .25, 'sine', .04, 600); tone(2200, .3, 'triangle', .025, 400, .06);
+}
+function applyUp(u) {
   chosen = null; uiParts = [];
   up[u.k] = U(u.k) + 1;
   if (u.k === 'hp') { P.max++; P.hp = Math.min(P.max, P.hp + 1); }
@@ -1046,7 +1261,7 @@ function applyCard(i) {
 function upgradeTick(dt) {
   for (const p of uiParts) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += p.g * dt; p.vx *= 1 - 1.2 * dt; p.rot += p.vr * dt; p.life -= dt; }
   uiParts = uiParts.filter(p => p.life > 0);
-  if (chosen && upT - chosen.at >= PICK_DUR) applyCard(chosen.i);
+  if (chosen && upT - chosen.at >= PICK_DUR) applyUp(chosen.u);
 }
 
 /* ---------- ОБНОВЛЕНИЕ ---------- */
@@ -1091,6 +1306,126 @@ function updateFx(dt) {
   whiteFlash = Math.max(0, whiteFlash - dt * 1.5);
 }
 
+// Щелкунчик кидает грецкие орехи веером в Санту; меньше половины здоровья — больше орехов. Орехи можно сбить.
+const NUTS = { cd: [2.6, 3.6], first: 2, n: 3, nRage: 5, spread: .22, speed: 290, r: 9 };
+const NUT_COLS = ['#8a5a2b', '#c89a5a', '#5a3a1a', '#fff'];
+const shootable = b => b.kind === 'snow' || b.kind === 'nut';   // снаряды, которые сбиваются пулями, взрывами и лазером
+function throwNuts(e) {
+  const n = e.hp < e.mhp / 2 ? NUTS.nRage : NUTS.n, a0 = Math.atan2(P.y - e.y, P.x - e.x);
+  const x = e.x + Math.cos(a0) * e.r, y = e.y + Math.sin(a0) * e.r;
+  for (let i = 0; i < n; i++) eproj(x, y, a0 + (i - (n - 1) / 2) * NUTS.spread, NUTS.speed * rand(.92, 1.08), 'nut', NUTS.r);
+  burst(x, y, 10, NUT_COLS, 160, .35, 3, true);
+  tone(900, .06, 'square', .04, -500); tone(600, .08, 'square', .03, -300, .05);   // щёлк
+}
+// Снеговик-великан: кидает веер больших снежков; теряя каждую четверть здоровья, отваливается кусок — 3 снеговика,
+// и сам он становится меньше. Суперудар «Вьюга»: замах wind с, потом на dur с метель — видно только круг radius вокруг Санты.
+const GIANT = { shot: [2.8, 3.8], n: 3, spread: .28, speed: 270, ballR: 13, split: 3,
+  bliz: { first: 7, cd: [15, 18], wind: 1.3, dur: 5.5, radius: 170, fade: .8 } };
+let blizT = 0, blizK = 0;   // сколько ещё длится вьюга; насколько она сейчас густая (0..1, плавно)
+function giantTick(e, dt) {
+  // откол кусков: на 75%, 50%, 25% здоровья
+  const lost = Math.floor((1 - e.hp / e.mhp) * 4);
+  while ((e.spl || 0) < Math.min(lost, 3)) {
+    e.spl = (e.spl || 0) + 1;
+    burst(e.x, e.y, 40, ['#fff', '#dff0ff', '#bfe6ff'], 320, .7, 6, true, 200); addRing(e.x, e.y, 120, '#dff0ff', .45); shake = Math.max(shake, 10); sfx.big();
+    for (let i = 0; i < GIANT.split; i++) { const a = rand(0, TAU); makeEnemy('snowman', clamp(e.x + Math.cos(a) * 70, 20, W - 20), clamp(e.y + Math.sin(a) * 70, 20, H - 20), true); }
+  }
+  e.r = ENM.giant.r * (.65 + .35 * e.hp / e.mhp);   // тает в размерах
+  if (e.bzW > 0) {   // замах вьюги: стоит, вокруг закручивается снег
+    e.bzW -= dt;
+    if (Math.random() < .9) { const a = rand(0, TAU), rr = rand(60, 140); burst(e.x + Math.cos(a) * rr, e.y + Math.sin(a) * rr, 1, ['#fff', '#dff0ff'], 200, .5, 4, true); }
+    if (e.bzW <= 0) { blizT = GIANT.bliz.dur; sfx.wind(); noise(1.2, .2, 400); whiteFlash = Math.max(whiteFlash, .4); }
+    return 0;   // скорость 0
+  }
+  e.bz = (e.bz ?? GIANT.bliz.first) - dt;
+  if (e.bz <= 0 && blizT <= 0) { e.bz = rand(...GIANT.bliz.cd); e.bzW = GIANT.bliz.wind; callout('ВЬЮГА!', '#dff0ff', 56); sfx.wind(); }
+  e.gs = (e.gs ?? 2) - dt;
+  if (e.gs <= 0) {   // веер больших снежков
+    e.gs = rand(...GIANT.shot);
+    const a0 = Math.atan2(P.y - e.y, P.x - e.x);
+    for (let i = 0; i < GIANT.n; i++) eproj(e.x + Math.cos(a0) * e.r, e.y + Math.sin(a0) * e.r, a0 + (i - (GIANT.n - 1) / 2) * GIANT.spread, GIANT.speed, 'snow', GIANT.ballR, 1);
+    sfx.lob(); burst(e.x + Math.cos(a0) * e.r, e.y + Math.sin(a0) * e.r, 10, ['#fff', '#bfe6ff'], 160, .35, 4);
+  }
+  return 1;
+}
+function updateBlizzard(dt) {   // вьюга гаснет, если великана больше нет
+  if (blizT > 0 && !enemies.some(e => e.t === 'giant' && !e.dead)) blizT = Math.min(blizT, GIANT.bliz.fade);
+  blizT = Math.max(0, blizT - dt);
+  blizK += ((blizT > GIANT.bliz.fade ? 1 : blizT / GIANT.bliz.fade) - blizK) * Math.min(1, dt * 3);
+}
+function drawBlizzard() {   // белая мгла: видно только круг вокруг Санты, сквозь неё летит снег
+  if (blizK < .01 || !P) return;
+  const R = GIANT.bliz.radius;
+  ctx.save(); ctx.globalAlpha = blizK;
+  const g = ctx.createRadialGradient(P.x, P.y, R * .55, P.x, P.y, R * 1.25);
+  g.addColorStop(0, 'rgba(200,220,245,0)'); g.addColorStop(.5, 'rgba(190,210,240,.7)'); g.addColorStop(1, 'rgba(175,195,230,.97)');
+  ctx.fillStyle = g; ctx.fillRect(-60, -60, W + 120, H + 120);
+  ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.lineCap = 'round';
+  for (let i = 0; i < 160; i++) {   // косые полосы снега, летят быстро
+    const sx = ((i * 197.3 + time * (700 + (i % 5) * 90)) % (W + 300)) - 150, sy = ((i * 89.7 + time * (260 + (i % 7) * 30)) % (H + 200)) - 100;
+    ctx.lineWidth = 1 + (i % 3); ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx - 26, sy - 10); ctx.stroke();
+  }
+  ctx.restore();
+}
+function throwCaramel(e) {
+  const x = clamp(P.x, 40, W - 40), y = clamp(P.y, 40, H - 40);
+  caramels.push({ x0: e.x, y0: e.y, x, y, t: 0, land: false, life: CARAMEL.life });
+  burst(e.x, e.y, 8, ['#e0a030', '#ffcf6a', '#8a4a10'], 140, .35, 4, true);
+  tone(300, .25, 'sine', .05, 250);   // «шлёп» в замахе
+}
+function updateCaramels(dt) {
+  for (const c of caramels) {
+    if (!c.land) {
+      c.t += dt;
+      if (c.t >= CARAMEL.fly) {   // упал: растёкся
+        c.land = true;
+        burst(c.x, c.y, 26, ['#e0a030', '#ffcf6a', '#8a4a10', '#fff3c0'], 260, .6, 5, true, 300);
+        addRing(c.x, c.y, CARAMEL.R, '#ffb84a', .4); noise(.25, .12, 600);
+      }
+      continue;
+    }
+    c.life -= dt;
+    if (Math.hypot(P.x - c.x, P.y - c.y) < CARAMEL.R * .9) {
+      if (!(buffs.coal > 0)) addText(P.x, P.y - 40, 'ЛИПКО!', '#ffb84a', 18);
+      buffs.coal = Math.max(buffs.coal || 0, CARAMEL.linger);
+    }
+  }
+  caramels = caramels.filter(c => !c.land || c.life > 0);
+}
+function drawCaramels() {   // лужи и метки падения (под всеми)
+  for (const c of caramels) {
+    ctx.save(); ctx.translate(c.x, c.y);
+    if (!c.land) {   // метка: круг сужается к моменту падения
+      const k = c.t / CARAMEL.fly;
+      ctx.globalAlpha = .35 + .4 * k; ctx.strokeStyle = '#ffb84a'; ctx.lineWidth = 3; ctx.setLineDash([10, 8]);
+      ctx.beginPath(); ctx.arc(0, 0, CARAMEL.R * (1.4 - .4 * k), 0, TAU); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(224,160,48,.18)'; ctx.beginPath(); ctx.arc(0, 0, CARAMEL.R * k, 0, TAU); ctx.fill();
+    } else {   // лужа: неровные края, блики; в конце тает
+      const a = Math.min(1, c.life / 1, (CARAMEL.life - c.life) * 6), R = CARAMEL.R;
+      ctx.globalAlpha = .85 * a;
+      const g = ctx.createRadialGradient(-R * .2, -R * .2, 4, 0, 0, R);
+      g.addColorStop(0, '#ffd27a'); g.addColorStop(.5, '#d98a1e'); g.addColorStop(1, 'rgba(140,70,10,.85)');
+      ctx.fillStyle = g; ctx.beginPath();
+      for (let i = 0; i <= 16; i++) { const t = i / 16 * TAU, rr = R * (.86 + .14 * Math.sin(t * 3 + c.x) * Math.cos(t * 2 + c.y)); i ? ctx.lineTo(Math.cos(t) * rr, Math.sin(t) * rr) : ctx.moveTo(Math.cos(t) * rr, Math.sin(t) * rr); }
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = 'rgba(255,245,200,.5)';
+      for (const [bx, by, br] of [[-.35, -.3, .14], [.2, -.4, .08], [.3, .25, .1]]) { ctx.beginPath(); ctx.ellipse(R * bx, R * by, R * br, R * br * .6, -.5, 0, TAU); ctx.fill(); }
+    }
+    ctx.restore();
+  }
+}
+function drawCaramelAir() {   // ком в полёте по дуге
+  for (const c of caramels) {
+    if (c.land) continue;
+    const k = c.t / CARAMEL.fly, x = c.x0 + (c.x - c.x0) * k, y = c.y0 + (c.y - c.y0) * k, h = Math.sin(k * Math.PI) * 120, sz = 13 + h * .06;
+    ctx.save(); ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.beginPath(); ctx.ellipse(x, y, sz * .9, sz * .45, 0, 0, TAU); ctx.fill();
+    ctx.translate(x, y - h); ctx.rotate(c.t * 8);
+    const g = ctx.createRadialGradient(-sz * .3, -sz * .3, 1, 0, 0, sz); g.addColorStop(0, '#fff0b8'); g.addColorStop(.5, '#e0a030'); g.addColorStop(1, '#8a4a10');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, sz, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#e0a030'; ctx.beginPath(); ctx.arc(-sz * .8, sz * .4, sz * .35, 0, TAU); ctx.fill();   // капля
+    ctx.restore();
+  }
+}
 function eproj(x, y, a, sp, kind, r, hp = 0) {
   eb.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, a, kind, r, hp, life: 7, dead: false });
 }
@@ -1234,13 +1569,9 @@ function drawIceField(x, y, R, k, len, al, sd) {
     if (kk <= 0) continue;
     const gr = (1 - (1 - kk) * (1 - kk)) * len;   // быстро выстреливает, потом дорастает
     const a = i / 11 * TAU + (hs(i, 2) - .5) * .5, L = R * (.55 + hs(i, 3) * .45) * gr, wd = (5 + hs(i, 4) * 6) * R / 95 * (.6 + .4 * len);
-    ctx.save(); ctx.rotate(a);
-    const sg = ctx.createLinearGradient(0, 0, L, 0); sg.addColorStop(0, 'rgba(120,200,255,.95)'); sg.addColorStop(1, 'rgba(240,252,255,.95)');
-    ctx.fillStyle = sg; ctx.beginPath(); ctx.moveTo(0, -wd); ctx.lineTo(L, 0); ctx.lineTo(0, wd); ctx.closePath(); ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(L, 0); ctx.stroke();   // светлая грань
-    ctx.restore();
+    iceSpire(a, L, wd);   // объёмный шпиль: светлая и тёмная грань, блик по ребру, тень
   }
-  ctx.fillStyle = `rgba(200,240,255,${.5 * k})`; ctx.beginPath(); ctx.arc(0, 0, (4 + k * 6) * R / 95, 0, TAU); ctx.fill();   // ледяное ядро
+  if (k > .05) iceCore(R * .6, k);   // ледяной ком в центре
   ctx.restore();
 }
 function drawQueenMarks() {
@@ -1264,7 +1595,7 @@ function update(dt) {
   updateBullets(dt);
   crowdCheck();   // может включить замедление, поэтому до расчёта времени монстров
   const edt = dt * enemyTimeMul();
-  updateSpikes(edt);
+  updateSpikes(edt); updateCaramels(edt); updateBlizzard(dt);
   updateEnemies(edt);
   updateEnemyShots(edt);
   updateMines(dt);
@@ -1365,8 +1696,10 @@ function updateBullets(dt) {
       }
     }
     if (b.dead) continue;
-    for (const s of eb) if (s.kind === 'snow' && !s.dead && Math.hypot(s.x - b.x, s.y - b.y) < s.r + 4) {
-      s.dead = true; b.dead = true; burst(s.x, s.y, 14, ['#fff', '#bfe6ff'], 200, .5, 3); addScore(5, s.x, s.y); break;
+    for (const s of eb) if (shootable(s) && !s.dead && Math.hypot(s.x - b.x, s.y - b.y) < s.r + 4) {
+      s.dead = true; b.dead = true; burst(s.x, s.y, 14, s.kind === 'nut' ? NUT_COLS : ['#fff', '#bfe6ff'], 200, .5, 3, s.kind === 'nut'); addScore(5, s.x, s.y);
+      if (s.kind === 'nut') tone(1200, .05, 'square', .03, -700);   // орех раскололся
+      break;
     }
     if (b.dead) continue;
     for (const g of gifts) {
@@ -1394,12 +1727,19 @@ function updateEnemies(dt) {
     const a = enemies[i], b = enemies[j], dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy), m = a.r + b.r - 4;
     if (d < m && d > .01) { const o = (m - d) / 2 / d; a.x -= dx * o; a.y -= dy * o; b.x += dx * o; b.y += dy * o; }
   }
+  const br = bodyR();
+  for (const e of enemies) {   // ближе края тела Санты не заходят: остаются снаружи, видно, кто напирает
+    if (e.dead || e.hid || e.ghost) continue;
+    const dx = e.x - P.x, dy = e.y - P.y, d = Math.hypot(dx, dy), m = e.r + br;
+    if (d < m && d > .01) { e.x = P.x + dx / d * m; e.y = P.y + dy / d * m; }
+  }
   enemies = enemies.filter(e => !e.dead);
 }
 function updateEnemy(e, dt) {
   const d0 = ENM[e.t];
   const dx = P.x - e.x, dy = P.y - e.y, d = Math.hypot(dx, dy) || 1;
-  e.a = Math.atan2(dy, dx); e.fl -= dt;
+  if (!(e.fr > 0)) e.a = Math.atan2(dy, dx);   // замороженный не поворачивается внутри льда
+  e.fl -= dt;
   if (e.aimHold > 0) e.aimHold -= dt;
   if (e.t === 'queen') {
     // взгляд догоняет Санту плавно, без рывков; позы и ярость перетекают друг в друга
@@ -1421,7 +1761,13 @@ function updateEnemy(e, dt) {
   }
   if (e.t === 'queen' && queenTick(e, dt)) return;   // телепорт: вихрь, исчезновение, метка
   if (!e.entered && e.x > 25 && e.x < W - 25 && e.y > 25 && e.y < H - 25) e.entered = true;
-  if (e.fr > 0) e.fr -= dt;
+  if (e.fr > 0) {
+    if (!e.frOn) { e.frOn = true; e.frA = 0; e.crS = -1; }   // только что заморозили: лёд нарастает
+    e.frA += dt; e.fr -= dt;
+    const cs = e.fr < .7 ? Math.floor((1 - e.fr / .7) * 3) : -1;   // трещины растут ступенями: на каждой — крошки льда и треск
+    if (cs > (e.crS ?? -1)) { e.crS = cs; if (cs >= 0) { burst(e.x, e.y - e.r * .2, 4, ['#ffffff', '#dff6ff'], 110, .35, 2, false); if (time - iceSndT > .06) { iceSndT = time; noise(.05, .08, 5000); } } }
+    if (e.fr <= 0) iceShatter(e);   // оттаял: лёд раскалывается
+  }
   else {
     let sp = e.sp, mvx = dx / d, mvy = dy / d;
     if (d0.pref && e.entered) {
@@ -1455,12 +1801,18 @@ function updateEnemy(e, dt) {
         else if (e.dash <= 0) { e.cwind = KC_WIND; tone(70, .6, 'sawtooth', .06, -30); }
       }
     }
+    if (e.t === 'giant' && e.entered) sp *= giantTick(e, dt);
     if (e.t === 'nutcracker' && e.entered) {
       e.st -= dt; e.sm -= dt;
       if (e.stW > 0) {
         e.stW -= dt; sp = 0;
         if (e.stW <= 0) { shocks.push({ x: e.x, y: e.y, r: e.r, max: 380, hit: false }); shake = 14; sfx.big(); }
       } else if (e.st <= 0) { e.stW = .9; e.st = rand(4, 5.5); }
+      e.nt = (e.nt ?? NUTS.first) - dt;
+      if (e.nt <= 0 && !(e.stW > 0)) {   // во время удара о землю не кидает
+        e.nt = rand(...NUTS.cd); e.nk = (e.nk || 0) + 1;
+        if (e.nk % CARAMEL.every === 0) throwCaramel(e); else throwNuts(e);
+      }
       if (e.sm <= 0) {
         e.sm = 9; callout('ПОДКРЕПЛЕНИЕ!', '#ffa94d', 40);
         for (let i = 0; i < 3; i++) { const a = rand(0, TAU); makeEnemy('ginger', clamp(e.x + Math.cos(a) * 60, 20, W - 20), clamp(e.y + Math.sin(a) * 60, 20, H - 20), true); }
@@ -1486,7 +1838,7 @@ function updateEnemy(e, dt) {
     }
   }
   e.px = e.x; e.py = e.y;
-  if (!e.dead && !(e.appT > 0) && d < e.r + P.r - 3) hurtPlayer(e);   // Королева в момент появления не ранит касанием (удар уже был)
+  if (!e.dead && !(e.appT > 0) && d < e.r + bodyR() + 2) hurtPlayer(e);   // коснулся края тела Санты   // Королева в момент появления не ранит касанием (удар уже был)
 }
 // снаряды монстров и ударные волны Щелкунчика
 function updateEnemyShots(dt) {
@@ -1495,7 +1847,7 @@ function updateEnemyShots(dt) {
     if (b.life <= 0 || b.x < -40 || b.x > W + 40 || b.y < -40 || b.y > H + 40) b.dead = true;
     if (!b.dead && P.inv <= 0 && Math.hypot(P.x - b.x, P.y - b.y) < b.r + P.r - 4) {
       b.dead = true;
-      burst(b.x, b.y, 10, b.kind === 'shard' ? ['#8fe8ff', '#fff'] : ['#fff', '#bfe6ff'], 200, .4, 3, true);
+      burst(b.x, b.y, 10, b.kind === 'shard' ? ['#8fe8ff', '#fff'] : b.kind === 'nut' ? NUT_COLS : ['#fff', '#bfe6ff'], 200, .4, 3, true);
       hurtPlayer(b);
     }
   }
@@ -1544,11 +1896,12 @@ function laserTick(dt) {
   const dmg = .6 * dmgMul() * rm;   // урон каждого луча (раньше луч был один, с уроном ×(1 + 0,5 за уровень залпа))
   const onRay = (x, y, r) => rays.some(({ c, s }) => { const ex = x - bx, ey = y - by; return ex * c + ey * s > 0 && Math.abs(ex * s - ey * c) < r; });
   let hit = false;
+  const bd = Math.hypot(bx - P.x, by - P.y);   // от Санты до дула
   for (const e of enemies) {
     if (e.dead) continue;
     for (const { c, s } of rays) {   // вблизи лучи перекрываются, и враг получает от каждого
       const ex = e.x - bx, ey = e.y - by;
-      if (ex * c + ey * s > 0 && Math.abs(ex * s - ey * c) < e.r + 18) {   // было +6: луч был слишком узким
+      if (ex * c + ey * s > -bd && Math.abs(ex * s - ey * c) < e.r + 18) {   // было +6: луч был слишком узким; -bd: враг вплотную, между Сантой и дулом, тоже горит
         burst(e.x, e.y, 1, ['#5fe0ff', '#fff'], 120, .25, 2.5, true);
         damageEnemy(e, dmg); hit = true;
         if (e.dead) break;
@@ -1556,7 +1909,7 @@ function laserTick(dt) {
     }
   }
   if (hit && Math.random() < .5) sfx.beam();   // шипение, когда луч кого-то жжёт
-  for (const b of eb) if (b.kind === 'snow' && !b.dead && onRay(b.x, b.y, b.r + 6)) { b.dead = true; burst(b.x, b.y, 12, ['#fff', '#5fe0ff'], 200, .4, 3); }
+  for (const b of eb) if (shootable(b) && !b.dead && onRay(b.x, b.y, b.r + 6)) { b.dead = true; burst(b.x, b.y, 12, b.kind === 'nut' ? NUT_COLS : ['#fff', '#5fe0ff'], 200, .4, 3); }
   if (P.bt <= 0) {
     P.bt = .3;
     for (const g of gifts) if (!g.dead && onRay(g.x, g.y, 26)) hitGift(g);
@@ -1720,6 +2073,8 @@ function drawDress(img, px, py, s, e, vx, vy) {
     ctx.restore();
   }
 }
+const SNOWY = { giant: 1, snowman: 1, thrower: 1 };   // снеговики: при попадании вместо вспышки летят комья снега (snowChips)
+const HIT_FLASH = { giant: 'rgba(0,0,0,0)', snowman: 'rgba(0,0,0,0)', thrower: 'rgba(0,0,0,0)' };   // цвет вспышки при попадании (кого нет — белая)
 function drawEnemy(e) {
   if (e.hid) return;   // Королева в телепорте
   const r = e.r, wob = Math.sin(e.ph), spr = enemySprite(e);
@@ -1736,6 +2091,7 @@ function drawEnemy(e) {
     ctx.fillStyle = 'rgba(0,0,10,.32)'; ctx.beginPath(); ctx.ellipse(0, 0, r * (1.05 + off * .03), r * .8, 0, 0, TAU); ctx.fill();
     ctx.restore();
   }
+  if (e.fr > 0) drawFrostGround(e, r);
   if (e.t === 'nutcracker' && e.stW > 0) {
     const k = 1 - e.stW / .9;
     ctx.fillStyle = `rgba(255,60,60,${.15 + k * .25})`; ctx.strokeStyle = 'rgba(255,90,90,.8)'; ctx.lineWidth = 3;
@@ -1785,6 +2141,13 @@ function drawEnemy(e) {
     const pose = kp && kp.ok ? kp
       : aimOn ? { img: spr.aimImg, px: spr.aimPx, py: spr.aimPy, s: spr.aimS || spr.s }
       : { img: spr.img, px: spr.px, py: spr.py, s: spr.s };
+    if (e.t === 'giant') {   // великан: ледяное свечение вокруг; в замахе вьюги — вихрь снега; размер тает вместе с e.r
+      const gk = e.r / ENM.giant.r; ctx.scale(gk, gk);
+      const wk = e.bzW > 0 ? 1 - e.bzW / GIANT.bliz.wind : 0, R = ENM.giant.r * (1.5 + wk * .8);
+      const g = ctx.createRadialGradient(0, 0, ENM.giant.r * .6, 0, 0, R); g.addColorStop(0, `rgba(170,225,255,${.35 + wk * .4})`); g.addColorStop(1, 'rgba(170,225,255,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, R, 0, TAU); ctx.fill();
+      if (wk > 0) { ctx.strokeStyle = `rgba(255,255,255,${.4 + wk * .5})`; ctx.lineWidth = 4; for (let k = 0; k < 3; k++) { ctx.beginPath(); ctx.arc(0, 0, R * (.7 + k * .12), time * 6 + k * 2, time * 6 + k * 2 + 2.2); ctx.stroke(); } }
+    }
     ctx.drawImage(pose.img, -pose.px * pose.s, -pose.py * pose.s, pose.img.width * pose.s, pose.img.height * pose.s);
     ctx.restore();
   } else if (e.t === 'imp') {
@@ -1840,6 +2203,26 @@ function drawEnemy(e) {
     ctx.shadowBlur = 0;
     ctx.fillStyle = '#00cfff'; ctx.beginPath(); ctx.arc(r * .62, -4, 2.4, 0, TAU); ctx.arc(r * .62, 4, 2.4, 0, TAU); ctx.fill();
     if (e.wind > 0) { ctx.strokeStyle = 'rgba(160,240,255,.9)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, 0, r + 8 + (1 - e.wind / .7) * 14, 0, TAU); ctx.stroke(); }
+  } else if (e.t === 'giant') {
+    const up = e.bzW > 0 ? 1 : 0, sw = Math.sin(e.ph * .6) * 4;
+    ctx.strokeStyle = '#5a3a20'; ctx.lineWidth = 6; ctx.lineCap = 'round';   // руки-ветки; в замахе вьюги подняты в стороны
+    for (const sd of [-1, 1]) {
+      const ax = up ? -r * .1 : r * .55 + sw * sd, ay = sd * (up ? r * 1.9 : r * 1.55);
+      ctx.beginPath(); ctx.moveTo(0, sd * r * .7); ctx.lineTo(ax, ay); ctx.lineTo(ax + r * .25, ay + sd * r * .2); ctx.moveTo(ax * .6, ay * .8); ctx.lineTo(ax * .6 + r * .3, ay * .8 - sd * r * .1); ctx.stroke();
+      ctx.fillStyle = '#c4161c'; ctx.beginPath(); ctx.arc(ax, ay, 8, 0, TAU); ctx.fill();   // варежки
+    }
+    const sn = (x, rr, c1, c2) => { const g = ctx.createRadialGradient(x - rr * .3, -rr * .3, rr * .1, x, 0, rr); g.addColorStop(0, '#ffffff'); g.addColorStop(.7, c1); g.addColorStop(1, c2); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, 0, rr, 0, TAU); ctx.fill(); };
+    sn(-r * .15, r, '#e8f1fc', '#9fb6d6');
+    ctx.strokeStyle = 'rgba(120,150,190,.6)'; ctx.lineWidth = 2;   // трещины на нижнем коме, больше по мере отколов
+    for (let k = 0; k < (e.spl || 0) * 2 + 1; k++) { const a = k * 2.1 + 1; ctx.beginPath(); ctx.moveTo(Math.cos(a) * r * .5 - r * .15, Math.sin(a) * r * .5); ctx.lineTo(Math.cos(a + .2) * r * .95 - r * .15, Math.sin(a + .2) * r * .95); ctx.stroke(); }
+    sn(r * .3, r * .7, '#eef5ff', '#a8bfdc');
+    ctx.fillStyle = '#c4161c'; ctx.beginPath(); ctx.arc(r * .3, 0, r * .55, -1.3, 1.3); ctx.arc(r * .3, 0, r * .42, 1.3, -1.3, true); ctx.fill();   // шарф
+    sn(r * .62, r * .45, '#f4f8ff', '#b0c6e0');
+    ctx.fillStyle = '#16161c'; ctx.beginPath(); ctx.arc(r * .55, 0, r * .36, 0, TAU); ctx.fill();   // цилиндр сверху
+    ctx.strokeStyle = '#c4161c'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(r * .55, 0, r * .3, 0, TAU); ctx.stroke();
+    ctx.fillStyle = '#ff8c1a'; ctx.beginPath(); ctx.moveTo(r * .95, -5); ctx.lineTo(r * 1.45, 0); ctx.lineTo(r * .95, 5); ctx.fill();   // морковка
+    ctx.fillStyle = '#ff2b2b'; ctx.shadowColor = '#ff2b2b'; ctx.shadowBlur = 8;
+    ctx.beginPath(); ctx.arc(r * .88, -r * .2, 3.2, 0, TAU); ctx.arc(r * .88, r * .2, 3.2, 0, TAU); ctx.fill(); ctx.shadowBlur = 0;
   } else if (e.t === 'nutcracker') {
     ctx.fillStyle = '#7a0e14'; ctx.fillRect(r * .2, -r * 1.25, r * 1.1, 8); ctx.fillRect(r * .2, r * 1.25 - 8, r * 1.1, 8);
     ctx.fillStyle = ENM.nutcracker.col; ctx.beginPath(); ctx.ellipse(-2, 0, r * 1.05, r * 1.2, 0, 0, TAU); ctx.fill();
@@ -1866,11 +2249,9 @@ function drawEnemy(e) {
     if (e.dashT > 0) { ctx.strokeStyle = 'rgba(255,60,60,.8)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, 0, r + 6, 0, TAU); ctx.stroke(); }
   }
   if (!spr) { ctx.rotate(-e.a); shadeBlob(e, r); ctx.rotate(e.a); }
-  if (e.fl > 0) { ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.beginPath(); ctx.arc(0, 0, r + 2, 0, TAU); ctx.fill(); }
-  if (e.fr > 0) {
-    ctx.fillStyle = 'rgba(140,215,255,.55)'; ctx.strokeStyle = 'rgba(220,245,255,.9)'; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(0, 0, r + 3, 0, TAU); ctx.fill(); ctx.stroke();
-  }
+  // вспышка от попадания: белая; у белого великана её не видно — у него вместо неё отлетают комья снега (snowChips)
+  if (e.fl > 0) { ctx.fillStyle = HIT_FLASH[e.t] || 'rgba(255,255,255,.7)'; ctx.beginPath(); ctx.arc(0, 0, r + 2, 0, TAU); ctx.fill(); }
+  if (e.fr > 0) drawIceCube(e, r);   // заморозка: враг в ледяном кубе
   ctx.restore();
   if (e.t === 'elf' && e.wind > 0) {
     ctx.strokeStyle = `rgba(255,70,70,${.3 + (1 - e.wind / .5) * .5})`; ctx.lineWidth = 1.5; ctx.setLineDash([6, 6]);
@@ -1943,6 +2324,17 @@ function drawEB(b) {
     ctx.rotate(b.a); ctx.strokeStyle = '#a0713a'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(-14, 0); ctx.lineTo(8, 0); ctx.stroke();
     ctx.fillStyle = '#ddd'; ctx.beginPath(); ctx.moveTo(8, -4); ctx.lineTo(16, 0); ctx.lineTo(8, 4); ctx.fill();
     ctx.fillStyle = '#e63946'; ctx.beginPath(); ctx.moveTo(-14, 0); ctx.lineTo(-18, -4); ctx.lineTo(-10, 0); ctx.lineTo(-18, 4); ctx.fill();
+  } else if (b.kind === 'nut') {
+    // грецкий орех: крутится в полёте, красная обводка — опасно
+    const r = b.r;
+    ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.beginPath(); ctx.ellipse(2, 9, r * .9, r * .45, 0, 0, TAU); ctx.fill();
+    ctx.rotate(time * 11 + b.r);
+    ctx.strokeStyle = 'rgba(255,107,107,.85)'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.ellipse(0, 0, r * 1.18 + 2, r + 2, 0, 0, TAU); ctx.stroke();
+    const g = ctx.createRadialGradient(-r * .35, -r * .35, 1, 0, 0, r * 1.2); g.addColorStop(0, '#d9a868'); g.addColorStop(.6, '#9a6630'); g.addColorStop(1, '#5a3a1a');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(0, 0, r * 1.18, r, 0, 0, TAU); ctx.fill();
+    ctx.strokeStyle = '#4a2c10'; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(-r * 1.18, 0); ctx.lineTo(r * 1.18, 0); ctx.stroke();   // шов скорлупы
+    ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(70,40,15,.7)';   // морщинки
+    for (const sy of [-1, 1]) { ctx.beginPath(); ctx.moveTo(-r * .7, sy * r * .25); ctx.quadraticCurveTo(-r * .2, sy * r * .75, r * .3, sy * r * .3); ctx.quadraticCurveTo(r * .6, sy * r * .7, r * .8, sy * r * .2); ctx.stroke(); }
   } else if (b.kind === 'shard') {
     // ледышка: летит остриём вперёд, за ней морозный след; грани разного цвета, чтобы читался объём
     ctx.rotate(b.a); ctx.globalCompositeOperation = 'lighter';
@@ -2021,7 +2413,9 @@ function drawParts() {
   }
   ctx.globalCompositeOperation = 'source-over';
   for (const p of parts) if (!p.glow) {
-    ctx.globalAlpha = Math.max(0, p.life / p.max); ctx.fillStyle = p.col;
+    ctx.globalAlpha = Math.max(0, p.life / p.max);
+    if (p.chunk) { ctx.fillStyle = 'rgba(70,100,150,.55)'; ctx.beginPath(); ctx.arc(p.x + 1.2, p.y + 1.6, p.size, 0, TAU); ctx.fill(); }   // ком снега: тень снизу, чтобы был объёмным
+    ctx.fillStyle = p.col;
     ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, TAU); ctx.fill();
   }
   ctx.globalAlpha = 1;
@@ -2031,20 +2425,21 @@ function drawParts() {
   }
   ctx.globalAlpha = 1;
 }
-function drawZaps() {   // молнии «Гирлянды»: ломаная цвета лампочки с белой серединой
+function drawZaps() {   // молнии «Гирлянды» и «Морозного шока»: ломаная цвета лампочки с белой серединой
   ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   for (const z of zaps) {
-    const dx = z.x2 - z.x1, dy = z.y2 - z.y1, L = Math.hypot(dx, dy) || 1, n = z.w ? 9 : 6, amp = z.w ? 16 : 9, zw = z.w || 5, pts = [];
+    const dx = z.x2 - z.x1, dy = z.y2 - z.y1, L = Math.hypot(dx, dy) || 1, n = z.w ? 10 : 7, amp = z.w ? 20 : 11, zw = z.w || 8, pts = [];
     for (let i = 0; i <= n; i++) {
       const t = i / n, j = i === 0 || i === n ? 0 : Math.sin(z.seed + i * 12.9 + time * 60) * amp;
       pts.push([z.x1 + dx * t - dy / L * j, z.y1 + dy * t + dx / L * j]);
     }
-    ctx.globalAlpha = Math.min(1, z.t / (z.max || .16) * 1.5); ctx.shadowColor = z.col; ctx.shadowBlur = 14;
-    for (const [w, c] of [[zw, z.col], [zw * .36, '#fff']]) {
-      ctx.lineWidth = w; ctx.strokeStyle = c; ctx.beginPath();
+    const al = Math.min(1, z.t / (z.max || .16) * 1.5); ctx.shadowColor = z.col; ctx.shadowBlur = 22;
+    for (const [w, c, a] of [[zw * 2.4, z.col, .3], [zw, z.col, 1], [zw * .4, '#fff', 1]]) {   // свечение, цветная молния, белая середина
+      ctx.globalAlpha = al * a; ctx.lineWidth = w; ctx.strokeStyle = c; ctx.beginPath();
       pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.stroke();
     }
-    ctx.fillStyle = z.col; ctx.beginPath(); ctx.arc(z.x2, z.y2, 5, 0, TAU); ctx.fill();
+    ctx.globalAlpha = al; ctx.fillStyle = z.col; ctx.beginPath(); ctx.arc(z.x2, z.y2, zw * .8, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(z.x2, z.y2, zw * .35, 0, TAU); ctx.fill();
   }
   ctx.globalAlpha = 1; ctx.shadowBlur = 0;
 }
@@ -2068,8 +2463,8 @@ function overlay(alpha = .6) { ctx.fillStyle = `rgba(5,10,30,${alpha})`; ctx.fil
 
 function drawCallouts() {
   callouts.forEach((c, i) => {
-    const p = 1 - c.t / c.max, sc = 1 + Math.max(0, .5 - p * 3) * 1.4;
-    ctx.save(); ctx.globalAlpha = Math.min(1, c.t * 2.5);
+    const p = 1 - c.t / c.max, sc = 1 + Math.max(0, .5 - p * 3) * (c.soft ? .5 : 1.4);   // мягкие почти не «выпрыгивают»
+    ctx.save(); ctx.globalAlpha = Math.min(1, c.t * 2.5) * (c.soft ? SOFT_CALLOUT.alpha : 1);
     ctx.translate(W / 2, H * .27 + (callouts.length - 1 - i) * 62); ctx.scale(sc, sc);
     bigText(c.s, 0, Math.min(c.size, W / 11), c.col, c.col, 0);
     ctx.restore();
@@ -2191,7 +2586,7 @@ function cardText(u, x, y, col = '#fff', sub = '#cfe3ff') {
   ctx.lineJoin = 'round'; ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(5,10,30,.8)';
   ctx.font = `bold 21px ${FONT}`; ctx.strokeText(u.n, x, y); ctx.fillStyle = col; ctx.fillText(u.n, x, y);
   ctx.font = `15px ${FONT}`; ctx.fillStyle = sub;
-  const ls = u.d.split('\n');
+  const ls = upDesc(u, U(u.k), U(u.k) + 1).split('\n');
   ls.forEach((l, k) => { ctx.strokeText(l, x, y + 26 + k * 20); ctx.fillText(l, x, y + 26 + k * 20); });
   return y + 26 + ls.length * 20;   // где кончился текст
 }
@@ -2210,14 +2605,17 @@ function pips(x, y, u, col) {   // уровни: закрашено — уже �
 function emoji(ic, x, y, size) { ctx.font = `${Math.round(size)}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#fff'; ctx.fillText(ic, x, y); ctx.textBaseline = 'alphabetic'; }
 
 /* ёлочные игрушки — шары на нитках падают сверху и покачиваются, выбранный разбивается */
-const BAUBLES = [['#ff8a8a', '#d62839', '#4a0710'], ['#7ff0a6', '#1f8a52', '#062a17'], ['#8fbaff', '#2a5bd7', '#0a1a50'], ['#ffe9a0', '#d9a21b', '#4a3005']];
+const BAUBLES = {   // блик, цвет, тень
+  red: ['#ff8a8a', '#d62839', '#4a0710'], orange: ['#ffc58a', '#e8701a', '#4a1f05'], blue: ['#8fbaff', '#2a5bd7', '#0a1a50'],
+  green: ['#7ff0a6', '#1f8a52', '#062a17'], gold: ['#ffe9a0', '#d9a21b', '#4a3005'],
+};
 function drawBauble(r, u, i, hov) {
   const sel = chosen && chosen.i === i, other = chosen && !sel, ct = chosen ? upT - chosen.at : 0;
   const ap = easeBack((upT - i * .12) / .6);
   const sw = Math.sin(time * 1.4 + i * 1.7) * (hov ? .015 : .04);
   const px = r.cx, py = -30, L = r.cy - py;
   const bx = px + Math.sin(sw) * L, by = py + Math.cos(sw) * L - (1 - ap) * H * .7;
-  const R = r.R * (hov ? 1.08 : 1), B = BAUBLES[i % BAUBLES.length];
+  const R = r.R * (hov ? 1.08 : 1), B = BAUBLES[u.b];
   ctx.save();
   if (other) ctx.globalAlpha = Math.max(0, 1 - ct * 3);
   ctx.strokeStyle = 'rgba(255,215,120,.75)'; ctx.lineWidth = 1.5;
@@ -2259,10 +2657,32 @@ const SKILL_TREE = [
   { n: 'ВЫЖИВАНИЕ',       c: '#7ff0a6', k: ['hp', 'vamp', 'speed', 'dash'] },
   { n: 'ПОДАРКИ И УДАЧА', c: '#ffe08a', k: ['gifts', 'sniff', 'luck', 'magnet', 'dur'] },
 ];
+// Подробности по клику в «Навыках»: что даёт каждый уровень (L) и на что действует (full). Цифры те же, что в коде улучшений.
+const pl = (n, a, b, c) => { const m = n % 10, h = n % 100; return n + ' ' + (m === 1 && h !== 11 ? a : m >= 2 && m <= 4 && (h < 12 || h > 14) ? b : c); };
+const SKILL_INFO = {
+  dmg:    { L: l => `+${25 * l}% к урону`, full: 'Усиливает всё оружие: леденцы, снежки, лазер, мины, а также Хоровод и Морозный шок.' },
+  rate:   { L: l => `+${15 * l}% к скорострельности`, full: 'Всё оружие стреляет чаще: леденцы, снежки, мины ставятся быстрее, лазер жжёт сильнее.' },
+  multi:  { L: l => `+${pl(l, 'пуля', 'пули', 'пуль')} в залпе`, full: 'Леденцы: больше пуль веером. Снежкомёт: больше снежков за выстрел. Лазер: +1 луч за уровень.' },
+  bounce: { L: l => `отскок от края поля ${pl(l, 'раз', 'раза', 'раз')}`, full: 'Пули леденцов и Хоровода отскакивают от краёв поля и летят дальше. На снежки, лазер и мины не действует.' },
+  pierce: { L: l => `пуля пробивает ${pl(l, 'врага', 'врагов', 'врагов')}`, full: 'Пуля леденцов проходит сквозь врага и летит дальше. На снежки, лазер и мины не действует.' },
+  crit:   { L: l => `шанс крита ${8 * l}%`, full: 'Пуля леденцов может ударить втрое сильнее. Только для леденцов.' },
+  hp:     { L: l => `+${pl(l, 'сердце', 'сердца', 'сердец')} к запасу`, full: 'Каждый уровень добавляет одно сердце к запасу и сразу лечит одно.' },
+  speed:  { L: l => `+${10 * l}% к скорости`, full: 'Санта бегает быстрее.' },
+  dash:   { L: l => `рывок раз в ${(1.6 * (1 - .2 * l)).toFixed(2).replace('.', ',')} с`, full: 'Рывок (Shift) восстанавливается быстрее. Стандарт — раз в 1,6 с.' },
+  vamp:   { L: l => `шанс ${3 * l}%, за волну до ${l} ${l === 1 ? 'сердца' : 'сердец'}`, full: 'Каждое убийство может вылечить одно сердце. Лимит за волну не даёт лечиться бесконечно.' },
+  dur:    { L: l => `+${25 * l}% ко времени`, full: 'Бонусы из подарков и подобранное оружие действуют дольше.' },
+  magnet: { L: l => `притягивает с ${(140 + 60 * l) / 10} м`, full: 'Бонусы на земле сами летят к Санте с большего расстояния. Стандарт — 14 м.' },
+  gifts:  { L: l => `подарок открывается с ${pl(3 - l, 'выстрела', 'выстрелов', 'выстрелов')}`, full: 'Стандарт — подарок открывается с 3 выстрелов. Ещё подарки появляются чуть чаще (+5% за уровень).' },
+  sniff:  { L: l => `ловушек ${20 - 6 * l}% (стандарт 20%)`, full: 'Меньше подарков оказываются ловушками.' },
+  chain:  { L: l => `ток бьёт ещё ${pl(l, 'врага', 'врагов', 'врагов')}`, full: 'Попадание пули леденцов или Хоровода бьёт током ближайших врагов по цепочке, каждого на половину урона. На снежки, лазер и мины не действует.' },
+  luck:   { L: l => `подарки на ${20 * l}% чаще, на поле до ${3 + l}`, full: 'Подарки появляются чаще, и их может лежать больше одновременно. Доля ловушек не растёт.' },
+};
+let skillSel = null;   // открытая карточка навыка в «Навыках»
 let skillsFrom = 'play';   // куда вернуться после закрытия
 function toggleSkills() {
+  skillSel = null;
   if (state === 'skills') { state = skillsFrom; return; }
-  if (state === 'play' || state === 'pause' || state === 'upgrade') { skillsFrom = state; state = 'skills'; mouseDown = false; }
+  if (state === 'play' || state === 'pause' || (state === 'upgrade' && !freePick)) { skillsFrom = state; state = 'skills'; mouseDown = false; }
 }
 function wrapText(t, maxW, maxLines) {   // перенос по словам под ширину
   const out = []; let line = '';
@@ -2274,48 +2694,114 @@ function wrapText(t, maxW, maxLines) {   // перенос по словам п�
   if (out.length > maxLines) { out.length = maxLines; out[maxLines - 1] += '…'; }
   return out;
 }
-function drawSkills() {
+// где лежит каждая строка дерева (одна разметка для рисования и для клика)
+function skillLayout() {
+  const cw = Math.min(390, (W - 100) / 3), gap = 30, x0 = W / 2 - (3 * cw + 2 * gap) / 2, top = 150;
+  const nh = Math.min(100, (H - top - 50) / 7 - 12), rows = [];
+  SKILL_TREE.forEach((b, i) => {
+    const x = x0 + i * (cw + gap);
+    b.k.forEach((k, j) => rows.push({ k, b, x, y: top + 34 + j * (nh + 12), w: cw, h: nh, ix: x + 36 }));
+  });
+  return { cw, gap, x0, top, nh, rows };
+}
+function rowAt() { return skillLayout().rows.find(r => mx > r.x && mx < r.x + r.w && my > r.y && my < r.y + r.h); }   // строка под мышкой
+function freeHov() {   // строка под мышкой, которую можно взять
+  if (!freePick || upT < .35 || chosen) return null;
+  const r = rowAt();
+  return r && U(r.k) < UPS.find(q => q.k === r.k).max ? r.k : null;
+}
+// pick = true: свободный выбор после босса (строки кликабельны)
+function drawSkills(pick = false) {
   overlay(.84);
   const taken = UPS.reduce((a, u) => a + U(u.k), 0), total = UPS.reduce((a, u) => a + u.max, 0);
-  bigText('НАВЫКИ', 74, 46, '#9ae6ff', '#9ae6ff');
-  ctx.font = `17px ${FONT}`; ctx.fillStyle = '#9fb6e0'; ctx.textAlign = 'center';
-  ctx.fillText(`Взято уровней: ${taken} из ${total}   •   Tab или Esc — закрыть`, W / 2, 110);
-  const cw = Math.min(390, (W - 100) / 3), gap = 30, x0 = W / 2 - (3 * cw + 2 * gap) / 2, top = 150;
-  const nh = Math.min(100, (H - top - 50) / 7 - 12);
-  SKILL_TREE.forEach((b, i) => {
-    const x = x0 + i * (cw + gap), ix = x + 36;
-    ctx.font = `bold 20px ${FONT}`; ctx.fillStyle = b.c; ctx.textAlign = 'left'; ctx.fillText(b.n, x + 4, top + 16);
-    const y0 = top + 34, cy = j => y0 + j * (nh + 12) + nh / 2;
+  if (pick) {
+    bigText(`ВОЛНА ${wave} ПРОЙДЕНА!`, 74, 46, '#ffd23f', '#ffd23f');
+    ctx.font = `bold 19px ${FONT}`; ctx.fillStyle = '#ffe9a0'; ctx.textAlign = 'center';
+    ctx.fillText('Награда за босса: возьми любой навык — клик по строке', W / 2, 110);
+  } else {
+    bigText('НАВЫКИ', 74, 46, '#9ae6ff', '#9ae6ff');
+    ctx.font = `17px ${FONT}`; ctx.fillStyle = '#9fb6e0'; ctx.textAlign = 'center';
+    ctx.fillText(`Взято уровней: ${taken} из ${total}   •   клик по навыку — подробнее   •   Tab или Esc — закрыть`, W / 2, 110);
+  }
+  const L = skillLayout(), hk = pick ? freeHov() : null, soft = !pick && !skillSel ? (rowAt() || {}).k : null, sk = pick && chosen ? chosen.u.k : null, ct = chosen ? upT - chosen.at : 0;
+  SKILL_TREE.forEach(b => {
+    const rows = L.rows.filter(r => r.b === b), r0 = rows[0], rn = rows[rows.length - 1];
+    ctx.font = `bold 20px ${FONT}`; ctx.fillStyle = b.c; ctx.textAlign = 'left'; ctx.fillText(b.n, r0.x + 4, L.top + 16);
     ctx.strokeStyle = b.c; ctx.globalAlpha = .35; ctx.lineWidth = 3;   // ствол ветки через иконки
-    ctx.beginPath(); ctx.moveTo(ix, cy(0)); ctx.lineTo(ix, cy(b.k.length - 1)); ctx.stroke(); ctx.globalAlpha = 1;
-    b.k.forEach((k, j) => {
-      const u = UPS.find(q => q.k === k), lv = U(k), y = y0 + j * (nh + 12), on = lv > 0;
-      ctx.save();
-      ctx.beginPath(); ctx.roundRect(x, y, cw, nh, 12);
-      ctx.fillStyle = on ? 'rgba(18,30,64,.95)' : 'rgba(10,16,38,.85)'; ctx.fill();
-      ctx.lineWidth = on ? 2 : 1; ctx.strokeStyle = on ? b.c : 'rgba(120,140,180,.35)'; ctx.stroke();
-      if (!on) ctx.globalAlpha = .5;
-      ctx.beginPath(); ctx.arc(ix, y + nh / 2, 24, 0, TAU); ctx.fillStyle = on ? b.c + '44' : 'rgba(80,100,140,.25)'; ctx.fill();
-      ctx.lineWidth = 2; ctx.strokeStyle = on ? b.c : 'rgba(150,170,210,.5)'; ctx.stroke();
-      emoji(u.i, ix, y + nh / 2 + 1, 25);
-      const tx = x + 74, tw = cw - 74 - 14;
-      ctx.textAlign = 'left'; ctx.font = `bold 17px ${FONT}`; ctx.fillStyle = on ? '#fff' : '#cfd8ee'; ctx.fillText(u.n, tx, y + 24);
-      ctx.textAlign = 'right'; ctx.font = `bold 14px ${FONT}`; ctx.fillStyle = lv >= u.max ? '#ffd23f' : on ? b.c : '#8fa0c0';
-      ctx.fillText(lv >= u.max ? `★ ${lv}/${u.max}` : `${lv}/${u.max}`, x + cw - 14, y + 24);
-      ctx.textAlign = 'left'; ctx.font = `13px ${FONT}`; ctx.fillStyle = '#b8c8e8';
-      wrapText(u.d.replace(/\n/g, ' '), tw, nh > 90 ? 3 : 2).forEach((l, n) => ctx.fillText(l, tx, y + 43 + n * 15));
-      for (let q = 0; q < u.max; q++) {   // уровни точками
-        ctx.beginPath(); ctx.arc(tx + 5 + q * 14, y + nh - 12, 4.5, 0, TAU);
-        if (q < lv) { ctx.fillStyle = b.c; ctx.fill(); } else { ctx.lineWidth = 1.2; ctx.strokeStyle = 'rgba(160,180,220,.6)'; ctx.stroke(); }
-      }
-      ctx.restore();
-    });
+    ctx.beginPath(); ctx.moveTo(r0.ix, r0.y + r0.h / 2); ctx.lineTo(rn.ix, rn.y + rn.h / 2); ctx.stroke(); ctx.globalAlpha = 1;
   });
+  for (const r of L.rows) {
+    const { k, b, x, y, w: cw, h: nh, ix } = r;
+    const u = UPS.find(q => q.k === k), lv = U(k), on = lv > 0, full = lv >= u.max;
+    const hov = k === hk, sel = k === sk;
+    ctx.save();
+    if (sel) { ctx.shadowColor = '#ffd23f'; ctx.shadowBlur = 40 * Math.max(0, 1 - ct / PICK_DUR); }
+    else if (hov) { ctx.shadowColor = b.c; ctx.shadowBlur = 28; }
+    ctx.beginPath(); ctx.roundRect(x, y, cw, nh, 12);
+    ctx.fillStyle = sel ? 'rgba(70,58,20,.97)' : hov ? 'rgba(30,46,92,.98)' : on ? 'rgba(18,30,64,.95)' : 'rgba(10,16,38,.85)'; ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.lineWidth = hov || sel || k === soft ? 3 : on ? 2 : 1; ctx.strokeStyle = sel ? '#ffd23f' : hov || k === soft ? '#fff' : on ? b.c : 'rgba(120,140,180,.35)'; ctx.stroke();
+    if (pick && full) ctx.globalAlpha = .35;   // уже на максимуме: взять нельзя
+    else if (!on && !hov && !sel) ctx.globalAlpha = .5;
+    ctx.beginPath(); ctx.arc(ix, y + nh / 2, 24, 0, TAU); ctx.fillStyle = on || hov ? b.c + '44' : 'rgba(80,100,140,.25)'; ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = on || hov ? b.c : 'rgba(150,170,210,.5)'; ctx.stroke();
+    emoji(u.i, ix, y + nh / 2 + 1, hov ? 28 : 25);
+    const tx = x + 74, tw = cw - 74 - 14;
+    ctx.textAlign = 'left'; ctx.font = `bold 17px ${FONT}`; ctx.fillStyle = hov ? '#ffd23f' : on ? '#fff' : '#cfd8ee'; ctx.fillText(u.n, tx, y + 24);
+    ctx.textAlign = 'right'; ctx.font = `bold 14px ${FONT}`; ctx.fillStyle = full ? '#ffd23f' : hov ? '#7dff9a' : on ? b.c : '#8fa0c0';
+    ctx.fillText(full ? `★ ${lv}/${u.max}` : hov ? `${lv} → ${lv + 1}` : `${lv}/${u.max}`, x + cw - 14, y + 24);
+    ctx.textAlign = 'left'; ctx.font = `13px ${FONT}`; ctx.fillStyle = '#b8c8e8';
+    wrapText((hov ? upDesc(u, lv, lv + 1) : upDesc(u, 0, Math.max(lv, 1))).replace(/\n/g, ' '), tw, nh > 90 ? 3 : 2).forEach((l, n) => ctx.fillText(l, tx, y + 43 + n * 15));
+    for (let q = 0; q < u.max; q++) {   // уровни точками; при наведении следующий мигает зелёным
+      ctx.beginPath(); ctx.arc(tx + 5 + q * 14, y + nh - 12, 4.5, 0, TAU);
+      if (q < lv) { ctx.fillStyle = b.c; ctx.fill(); }
+      else if ((hov || sel) && q === lv) { ctx.fillStyle = `rgba(125,255,154,${.45 + .55 * Math.abs(Math.sin(time * 4))})`; ctx.fill(); }
+      else { ctx.lineWidth = 1.2; ctx.strokeStyle = 'rgba(160,180,220,.6)'; ctx.stroke(); }
+    }
+    ctx.restore();
+  }
+  if (!pick && skillSel) drawSkillCard(skillSel);
+}
+// карточка навыка: что делает и что даёт каждый уровень (взятые — цветом ветки, следующий — зелёным)
+function drawSkillCard(k) {
+  const u = UPS.find(q => q.k === k), info = SKILL_INFO[k], br = SKILL_TREE.find(b => b.k.includes(k)), lv = U(k);
+  const w = Math.min(620, W - 80), x = W / 2 - w / 2;
+  ctx.font = `17px ${FONT}`;
+  const fl = wrapText(info.full, w - 60, 5);
+  const h = 120 + fl.length * 23 + 20 + u.max * 30 + 50, y = Math.max(20, H / 2 - h / 2);
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.fillRect(0, 0, W, H);
+  ctx.shadowColor = br.c; ctx.shadowBlur = 30;
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, 18); ctx.fillStyle = 'rgba(14,22,50,.98)'; ctx.fill();
+  ctx.shadowBlur = 0; ctx.lineWidth = 2.5; ctx.strokeStyle = br.c; ctx.stroke();
+  ctx.beginPath(); ctx.arc(x + 62, y + 62, 34, 0, TAU); ctx.fillStyle = br.c + '44'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = br.c; ctx.stroke();
+  emoji(u.i, x + 62, y + 64, 36);
+  ctx.textAlign = 'left'; ctx.font = `bold 26px ${FONT}`; ctx.fillStyle = '#fff'; ctx.fillText(u.n, x + 112, y + 56);
+  ctx.font = `bold 15px ${FONT}`; ctx.fillStyle = br.c; ctx.fillText(`${br.n}   •   уровень ${lv} из ${u.max}`, x + 112, y + 82);
+  ctx.font = `17px ${FONT}`; ctx.fillStyle = '#cfe0ff';
+  let ty = y + 130;
+  fl.forEach(l => { ctx.fillText(l, x + 30, ty); ty += 23; });
+  ty += 18;
+  for (let l = 1; l <= u.max; l++, ty += 30) {
+    const got = l <= lv, nxt = l === lv + 1;
+    if (got || nxt) { ctx.beginPath(); ctx.roundRect(x + 22, ty - 21, w - 44, 28, 8); ctx.fillStyle = got ? br.c + '22' : 'rgba(125,255,154,.1)'; ctx.fill(); }
+    ctx.font = `bold 16px ${FONT}`; ctx.fillStyle = got ? br.c : nxt ? '#7dff9a' : '#7f8db0';
+    ctx.fillText((got ? '● ' : nxt ? '▶ ' : '○ ') + `Уровень ${l}`, x + 34, ty);
+    ctx.font = `16px ${FONT}`; ctx.fillStyle = got ? '#fff' : nxt ? '#d8ffe0' : '#8f9cbc';
+    ctx.fillText(info.L(l), x + 170, ty);
+    if (nxt) { ctx.textAlign = 'right'; ctx.font = `13px ${FONT}`; ctx.fillStyle = '#7dff9a'; ctx.fillText('следующий', x + w - 34, ty); ctx.textAlign = 'left'; }
+  }
+  ctx.textAlign = 'center'; ctx.font = `14px ${FONT}`; ctx.fillStyle = '#8fa3cc';
+  ctx.fillText('Клик или Esc — назад к навыкам', W / 2, y + h - 20);
+  ctx.restore();
 }
 function drawUpgrade() {
-  overlay(.72);
-  const L = cardRects(), hi = hovIdx();
-  cards.forEach((u, i) => drawBauble(L[i], u, i, i === hi));
+  if (freePick) drawSkills(true);
+  else {
+    overlay(.72);
+    const L = cardRects(), hi = hovIdx();
+    cards.forEach((u, i) => drawBauble(L[i], u, i, i === hi));
+  }
   for (const p of uiParts) {   // осколки и искры
     ctx.save(); ctx.globalAlpha = clamp(p.life / p.max, 0, 1); ctx.translate(p.x, p.y); ctx.rotate(p.rot); ctx.fillStyle = p.col;
     ctx.beginPath();
@@ -2323,6 +2809,7 @@ function drawUpgrade() {
     else ctx.arc(0, 0, p.size, 0, TAU);
     ctx.fill(); ctx.restore();
   }
+  if (freePick) return;
   bigText(`ВОЛНА ${wave} ПРОЙДЕНА!`, H / 2 - 230, Math.min(54, W / 14), '#9ae6ff', '#9ae6ff');
   ctx.font = `20px ${FONT}`; ctx.fillStyle = '#cfe3ff'; ctx.textAlign = 'center';
   ctx.fillText('Выбери улучшение (клик или клавиши 1 / 2 / 3 / 4)   •   Tab — все навыки', W / 2, H / 2 - 190);
@@ -2373,6 +2860,7 @@ function drawLighting() {
     for (const g of gifts) L(g.x, g.y, 110, .85, g.col, .1);
     const darkSurf = curSurface().dark;
     for (const e of enemies) if (e.tp === 'gone') L(e.mx, e.my, QUEEN.markR * 1.8, .5 + .5 * (1 - e.tpT / e.mkT), '#8fe8ff', .12);   // метка Королевы видна и в темноте
+    for (const c of caramels) if (c.land) L(c.x, c.y, CARAMEL.R * 1.6, .55, '#ffb84a', .1);   // лужи карамели видны в темноте
     for (const s of qspikes) L(s.x, s.y, QUEEN.pk.R * 2, s.t > 0 ? .35 + .35 * (1 - s.t / s.w) : .9, '#8fe8ff', .12);   // и пики
     for (const e of enemies) if (!e.hid) L(e.x, e.y, e.ghost ? 320 : e.boss ? 190 : darkSurf ? 90 : 62, e.boss ? .8 : darkSurf ? .7 : .45, e.ghost ? '#ff2b2b' : e.boss ? ENM[e.t].splat : null, e.ghost ? .18 : .08);
     for (const b of eb) if (b.kind !== 'arrow') L(b.x, b.y, 70, .6, b.kind === 'shard' ? '#8fe8ff' : null, .12);
@@ -2502,6 +2990,7 @@ const PRINTS = {   // step: через сколько пикселей пути 
   thrower:    { step: 22, k: 'round', s: 5.5 },
   krampus:    { step: 42, k: 'paw',   s: 12 },
   nutcracker: { step: 34, k: 'boot',  s: 9 },
+  giant:      { step: 40, k: 'round', s: 12 },
   queen:      { step: 30, k: 'frost', s: 9 },   // иней-снежинки там, где она проплыла
 };
 let prints = [];
@@ -2619,6 +3108,7 @@ function render() {
   drawStreaks();
   drawLights();
   if (P && state !== 'menu') {
+    drawCaramels();
     mines.forEach(drawMine);
     orbs.forEach(drawOrb); gifts.forEach(drawGift);
     drawShocks(); drawQueenMarks();
@@ -2628,6 +3118,7 @@ function render() {
     drawBeam();
     bullets.forEach(drawBullet);
     eb.forEach(drawEB);
+    drawCaramelAir();
   }
   drawParts();
   drawLighting();
@@ -2637,6 +3128,7 @@ function render() {
     ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(5,10,30,.85)'; ctx.strokeText(t.s, t.x, t.y); ctx.fillStyle = t.col; ctx.fillText(t.s, t.x, t.y);
   }
   ctx.globalAlpha = 1;
+  drawBlizzard();
   ctx.restore();
   ctx.fillStyle = '#fff';
   for (const f of flakes) {   // крупные снежинки ближе к камере: размытые
@@ -2671,7 +3163,7 @@ function render() {
     lines.forEach((l, i) => ctx.fillText(l, W / 2, H / 2 + 5 + i * 30));
     if (loadDone()) drawModeButtons();
     else { ctx.font = `bold 28px ${FONT}`; ctx.fillStyle = '#ffd23f'; ctx.fillText(`Загрузка… ${ALL_IMGS.filter(im => im.complete).length} / ${ALL_IMGS.length}`, W / 2, H / 2 + 150); }
-    ctx.font = `13px ${FONT}`; ctx.fillStyle = '#6f86b3'; ctx.textAlign = 'right'; ctx.fillText(`v${VERSION}`, W - 24, H - 20); ctx.textAlign = 'center';
+    ctx.font = `13px ${FONT}`; ctx.fillStyle = '#6f86b3'; ctx.textAlign = 'right'; ctx.fillText(`v${VERSION}${CLASSIC ? ' · классика' : ''}`, W - 24, H - 20); ctx.textAlign = 'center';
   }
   if (state === 'upgrade') drawUpgrade();
   if (state === 'skills') drawSkills();
@@ -2744,10 +3236,11 @@ addEventListener('mousedown', e => {
   mx = e.clientX / ZOOM_OUT; my = e.clientY / ZOOM_OUT;
   audioInit();
   if (state === 'menu' && !loadDone()) return;
-  if (state === 'skills') return;
+  if (state === 'skills') { if (skillSel) skillSel = null; else { const r = rowAt(); if (r) skillSel = r.k; } return; }
   if (state === 'menu') { const r = modeRects().find(r => mx > r.x && mx < r.x + r.w && my > r.y && my < r.y + r.h); if (r) pickMode(r.k); return; }
   if (state === 'over' && overT > .8) { startGame(); return; }
   if (state === 'win' && overT > 1.5) { state = 'menu'; return; }
+  if (state === 'upgrade' && freePick) { const k = freeHov(); if (k) pickFree(k); return; }
   if (state === 'upgrade') {
     cardRects().forEach((r, i) => { if (mx > r.x && mx < r.x + r.w && my > r.y && my < r.y + r.h) pickCard(i); });
     return;
@@ -2767,7 +3260,7 @@ addEventListener('keydown', e => {
   audioInit();
   if (e.code === 'KeyM') muted = !muted;
   if (e.code === 'Tab' && !e.repeat) { toggleSkills(); return; }
-  if (e.code === 'Escape' && state === 'skills') { toggleSkills(); return; }
+  if (e.code === 'Escape' && state === 'skills') { if (skillSel) skillSel = null; else toggleSkills(); return; }
   if (e.code === 'KeyP' || e.code === 'Escape') { if (state === 'play') state = 'pause'; else if (state === 'pause') state = 'play'; }
   if (e.code === 'Escape' && state === 'over' && overT > .8) state = 'menu';
   if (state === 'menu' && loadDone()) { const k = { Digit1: 'easy', Digit2: 'standard', Digit3: 'hardcore' }[e.code]; if (k) pickMode(k); }
@@ -2778,9 +3271,10 @@ addEventListener('keydown', e => {
   if (state === 'play') {
     // тест голоса: Z, X, C, V, B проигрывают фразы по очереди (double, triple, massacre, dominating, owning)
     if (TEST_KEYS) { const tv = { KeyZ: 'double_kill', KeyX: 'triple_kill', KeyC: 'massacre', KeyV: 'dominating', KeyB: 'owning' }[e.code]; if (tv) voice(tv, true); }
-    if (TEST_KEYS) { const tb = { Digit6: 'shock', Digit7: 'knock', Digit8: 'hor', Digit9: 'slowmo' }[e.code]; if (tb) orbs.push({ x: P.x + 70, y: P.y, type: tb, life: 12, ph: 0 }); }
+    if (TEST_KEYS) { const tb = { Digit5: 'nova', Digit6: 'shock', Digit7: 'knock', Digit8: 'hor', Digit9: 'slowmo' }[e.code]; if (tb) orbs.push({ x: P.x + 70, y: P.y, type: tb, life: 12, ph: 0 }); }
     if (TEST_KEYS && e.code === 'Digit0') { up.chain = Math.min(5, U('chain') + 1); addText(P.x, P.y - 40, '💡 Гирлянда ' + up.chain, '#ffd23f', 20); }
     if (TEST_KEYS && e.code === 'KeyK' && state === 'play') spawnEnemy('queen');   // тест: Снежная Королева
+    if (TEST_KEYS && e.code === 'KeyG' && state === 'play') spawnEnemy('giant');   // тест: Снеговик-великан
     if (TEST_KEYS && e.code === 'KeyJ') { const q = enemies.find(e => e.t === 'queen' && !e.hid); if (q) damageEnemy(q, q.mhp / 3 + 1); }   // тест: снять ей треть здоровья (следующая фаза)
     if (TEST_KEYS && e.code === 'KeyN') { spawnQ = []; introT = 0; for (const o of enemies) o.dead = true; }   // тест: закончить волну
     if (TEST_KEYS && e.code === 'KeyU') { wave = MODES[mode].waves - 1; spawnQ = []; introT = 0; for (const o of enemies) o.dead = true; }   // тест: сразу к последней волне
@@ -2791,7 +3285,7 @@ addEventListener('keydown', e => {
     if (e.code === 'Digit3') setWeapon('laser');
     if (e.code === 'Digit4') setWeapon('mine');
   }
-  if (state === 'upgrade') { const i = ['Digit1', 'Digit2', 'Digit3', 'Digit4'].indexOf(e.code); if (i >= 0) pickCard(i); }
+  if (state === 'upgrade' && !freePick) { const i = ['Digit1', 'Digit2', 'Digit3', 'Digit4'].indexOf(e.code); if (i >= 0) pickCard(i); }
 });
 addEventListener('keyup', e => { keys[e.code] = false; });
 

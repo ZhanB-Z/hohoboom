@@ -1,6 +1,6 @@
 # Ho-Ho-Boom!
 
-**Save the New Year from the Snow Queen's army!**
+**Save Christmas from the Snow Queen's army!**
 
 A top-down New Year shooter: waves of monsters, power-ups and traps hidden in gifts,
 upgrades between waves, a boss every 5 waves, and three modes — 15, 20 or 25 waves — ending with the Snow Queen.
@@ -23,4 +23,4 @@ Download the repository and open `index.html` in a browser.
 - M — mute
 
 ## Version
-0.37.0. See [CHANGELOG.md](CHANGELOG.md) for the full history.
+0.38.0. See [CHANGELOG.md](CHANGELOG.md) for the full history.

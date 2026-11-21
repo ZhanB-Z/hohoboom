@@ -3,6 +3,27 @@
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow [SemVer](https://semver.org/).
 Before 1.0 the version is 0.<build>.<patch>.
 
+## [0.38.0] — 2026-11-21
+### Added
+- New boss: the Giant Snowman on wave 15 in Standard and Hardcore. He throws fans of big snowballs, breaks off three snowmen with every quarter of health lost and shrinks. His Blizzard leaves Santa seeing only a small circle around himself.
+- The Nutcracker throws fans of walnuts (they can be shot down), and every third throw a lump of caramel that leaves a sticky, slowing puddle.
+- Boss reward: after a boss wave, pick any skill from the skill tree instead of four random upgrades.
+- Skill details: click a skill on the skills screen (Tab) to see what each level gives.
+- Classic look: open `index.html?classic` to see all characters drawn as in the first versions.
+- Test mode: 5 gives Frost Nova, G summons the Giant Snowman.
+### Changed
+- Upgrade baubles are coloured by type: red for health, orange for damage, blue for bullets, green for movement, gold for gifts.
+- Frost Shock hits up to 26 enemies instead of 16, jumps farther, thicker bolt.
+- Garland sparks are thicker, glow and stay visible longer.
+- Snow Whirlwind: larger radius, stronger push, reaches distant enemies too.
+- Clearer upgrade descriptions with numbers per level.
+- Kill-streak callouts are semi-transparent, smaller and shorter.
+- Enemies stop at the edge of Santa's body instead of overlapping him; point-blank shots now hit.
+- Snowmen throw off chunks of snow when hit.
+- Frozen enemies are encased in a block of ice that cracks and shatters; the Snow Queen's ice spikes look three-dimensional.
+### Fixed
+- The subtitle on the skills screen was drawn in a huge font.
+
 ## [0.37.0] — 2026-11-19
 ### Added
 - Three modes: Novice (15 waves), Standard (20) and Hardcore (25). Each mode ends with a victory screen.
